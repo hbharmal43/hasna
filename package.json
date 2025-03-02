@@ -1,0 +1,37 @@
+{
+  "name": "linkedin-easy-apply-automation",
+  "version": "1.0.0",
+  "description": "Chrome extension to automate LinkedIn Easy Apply process",
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "watch": "webpack --config webpack.config.js --watch",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "linkedin",
+    "automation",
+    "chrome-extension"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "copy-webpack-plugin": "^12.0.2",
+    "html-webpack-plugin": "^5.6.0",
+    "sharp": "^0.33.5",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.1",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.3",
+    "@emotion/styled": "^11.11.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

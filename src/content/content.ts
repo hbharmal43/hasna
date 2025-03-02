@@ -270,15 +270,8 @@ const isJobAlreadyApplied = (jobCard: HTMLElement): boolean => {
 };
 
 const findNextJob = (): HTMLElement | null => {
-  // Specifically look for jobs in the search results list
-  const jobsList = document.querySelector('.jobs-search-results-list');
-  if (!jobsList) {
-    console.log('Could not find jobs list');
-    return null;
-  }
-
-  // Get all job cards within the search results list
-  const jobCards = jobsList.querySelectorAll('.job-card-container:not([data-applied="true"])');
+  // Get all job cards
+  const jobCards = document.querySelectorAll(SELECTORS.JOB_CARD);
   
   for (const card of jobCards) {
     const jobCard = card as HTMLElement;
@@ -288,9 +281,15 @@ const findNextJob = (): HTMLElement | null => {
       continue;
     }
 
-    // Skip if already applied
+    // Skip if we've marked it as applied in our extension
+    if (jobCard.getAttribute('data-applied') === 'true') {
+      continue;
+    }
+
+    // Check if LinkedIn shows it as already applied
     if (isJobAlreadyApplied(jobCard)) {
       console.log('Skipping already applied job');
+      // Optionally mark it in our system too
       markJobAsApplied(jobCard);
       continue;
     }
@@ -309,49 +308,49 @@ const markJobAsApplied = (jobElement: HTMLElement) => {
   jobElement.setAttribute('data-applied', 'true');
 };
 
-const clickJob = (jobElement: HTMLElement): boolean => {
-  try {
-    // Find the job card list item
-    const jobCard = jobElement.closest('.jobs-search-results__list-item');
-    if (!jobCard) {
-      console.log('Could not find job card container');
-      return false;
-    }
-
-    // Click the job card itself to show details in the right panel
-    jobCard.click();
-    
-    // Alternative approach if direct click doesn't work
-    const jobLink = jobCard.querySelector('.job-card-container__link');
-    if (jobLink) {
-      // Prevent default navigation
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      // This will show the job details in the right panel without navigation
-      return jobLink.dispatchEvent(clickEvent);
-    }
-
+const clickJob = (jobElement: HTMLElement) => {
+  const clickableElement = jobElement.querySelector('a, button') as HTMLElement;
+  if (clickableElement) {
+    clickableElement.click();
     return true;
-  } catch (error) {
-    console.error('Error clicking job:', error);
-    return false;
   }
+  return false;
 };
 
 const areAllFieldsFilled = async (): Promise<boolean> => {
-  // Check all visible required fields
-  const requiredFields = document.querySelectorAll('input[required], textarea[required], select[required]');
-  const emptyFields = Array.from(requiredFields).filter(field => {
+  // Get all visible input fields, textareas, and selects that are required or have error messages
+  const formFields = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
+  
+  for (const field of Array.from(formFields)) {
     const element = field as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-    return isElementVisible(element as HTMLElement) && isFieldEmpty(element);
-  });
+    
+    // Skip if not visible
+    if (!isElementVisible(element as HTMLElement)) {
+      continue;
+    }
 
-  if (emptyFields.length > 0) {
-    console.log(`Found ${emptyFields.length} empty required fields`);
+    // Check if field is required or has error message
+    const isRequired = element.hasAttribute('required') || 
+                      element.getAttribute('aria-required') === 'true' ||
+                      element.closest('.required') !== null;
+
+    // Check for error messages
+    const hasError = element.getAttribute('aria-invalid') === 'true' ||
+                    element.classList.contains('artdeco-text-input--error');
+
+    if (isRequired || hasError) {
+      const isEmpty = isFieldEmpty(element);
+      if (isEmpty) {
+        console.log('Empty required field found:', element);
+        return false;
+      }
+    }
+  }
+
+  // Check for any error messages on the page
+  const errorMessages = document.querySelectorAll('.artdeco-inline-feedback--error');
+  if (errorMessages.length > 0) {
+    console.log('Error messages found on page');
     return false;
   }
 
@@ -360,13 +359,6 @@ const areAllFieldsFilled = async (): Promise<boolean> => {
 
 const processApplication = async () => {
   try {
-    // Make sure we're in the search results view
-    const searchResults = document.querySelector('.jobs-search-results-list');
-    if (!searchResults) {
-      console.log('Not in search results view, stopping automation');
-      return;
-    }
-
     // Find the next job to apply to
     const nextJob = findNextJob();
     if (!nextJob) {
@@ -374,16 +366,21 @@ const processApplication = async () => {
       return;
     }
 
-    // Scroll the job into view in the list
-    scrollToJob(nextJob);
-    await sleep(1000);
+    // If the job is already applied to, don't wait with the full delay
+    if (isJobAlreadyApplied(nextJob)) {
+      await sleep(500); // Just a small delay to prevent too rapid scrolling
+      return; // Skip to next job immediately
+    }
 
-    // Click the job card to show details in right panel
+    // Scroll to and click the job
+    scrollToJob(nextJob);
+    await sleep(1000); // Wait for scroll to complete
+    
     if (!clickJob(nextJob)) {
       console.log('Could not click the job card');
       return;
     }
-
+    
     await sleep(2000); // Wait for job details to load
 
     // Click Easy Apply button
@@ -412,31 +409,36 @@ const processApplication = async () => {
       // Try to fill form fields on each step
       await fillFormFields();
       
-      // Wait for fields to be filled and check if all required fields are filled
-      await sleep(1000);
+      // Give time for fields to be filled and validated
+      await sleep(2000);
+
+      // Check if all required fields are filled
       const fieldsAreFilled = await areAllFieldsFilled();
       
       if (!fieldsAreFilled) {
         console.log('Waiting for all required fields to be filled...');
-        retryCount++;
-        if (retryCount >= maxRetries) {
-          console.log('Max retries reached waiting for fields to be filled');
-          continuing = false;
+        // Wait longer to give time for manual input
+        await sleep(5000);
+        // Check again after waiting
+        const recheckedFields = await areAllFieldsFilled();
+        if (!recheckedFields) {
+          console.log('Fields still not filled, waiting more...');
+          await sleep(5000);
+          continue;
         }
-        await sleep(1000);
-        continue;
       }
 
-      // Now check for Review button
+      // Only proceed with Review/Next/Submit if fields are filled
       const reviewed = await clickAnyElement(SELECTORS.REVIEW_BUTTON);
       if (reviewed) {
         console.log('Clicked review button');
-        await sleep(2000); // Wait longer for review page to load
+        await sleep(2000);
         
-        // Check if all fields are filled in review page
+        // Check fields again in review page
         const reviewFieldsFilled = await areAllFieldsFilled();
         if (!reviewFieldsFilled) {
           console.log('Review page has empty required fields, waiting...');
+          await sleep(5000);
           continue;
         }
         
@@ -446,51 +448,53 @@ const processApplication = async () => {
           continuing = false;
           await sleep(1000);
           await clickElement(SELECTORS.CLOSE_BUTTON);
-          // Mark the job as applied
           markJobAsApplied(nextJob);
-          // Wait for configured delay before moving to next job
           const delay = userData?.settings?.nextJobDelay || 5000;
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
         } else {
-          // If submit button isn't immediately visible after review, wait and retry
           retryCount++;
           if (retryCount >= maxRetries) {
-            console.log('Max retries reached for submit button');
+            console.log('Could not find submit button, closing application');
             continuing = false;
+            await clickElement(SELECTORS.CLOSE_BUTTON);
           }
           await sleep(1000);
         }
       } else {
-        // If no review button, try next or submit
         const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
         if (submitted) {
           console.log('Application submitted successfully');
           continuing = false;
           await sleep(1000);
           await clickElement(SELECTORS.CLOSE_BUTTON);
-          // Mark the job as applied
           markJobAsApplied(nextJob);
-          // Wait for configured delay before moving to next job
           const delay = userData?.settings?.nextJobDelay || 5000;
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
         } else {
-          // Only try next button if all fields are filled
-          console.log('Attempting to click next button...');
-          const hasNext = await clickAnyElement(SELECTORS.NEXT_BUTTON);
-          if (hasNext) {
-            console.log('Successfully clicked next button');
-            retryCount = 0; // Reset retry count on successful next click
-            await sleep(1000); // Wait for next page to load
-          } else {
-            console.log('No next button found, retrying...');
-            retryCount++;
-            if (retryCount >= maxRetries) {
-              console.log('Max retries reached for navigation');
-              continuing = false;
+          // Only try next button if all fields are properly filled
+          const fieldsReady = await areAllFieldsFilled();
+          if (fieldsReady) {
+            console.log('All fields filled, attempting to click next button...');
+            const hasNext = await clickAnyElement(SELECTORS.NEXT_BUTTON);
+            if (hasNext) {
+              console.log('Successfully clicked next button');
+              retryCount = 0;
+              await sleep(1000);
+            } else {
+              console.log('No next button found, waiting...');
+              retryCount++;
+              if (retryCount >= maxRetries) {
+                console.log('Could not proceed with application, closing');
+                continuing = false;
+                await clickElement(SELECTORS.CLOSE_BUTTON);
+              }
+              await sleep(1000);
             }
-            await sleep(1000);
+          } else {
+            console.log('Waiting for fields to be filled before proceeding...');
+            await sleep(5000);
           }
         }
       }
@@ -498,6 +502,7 @@ const processApplication = async () => {
   } catch (error) {
     console.error('Error during application process:', error);
     continuing = false;
+    await clickElement(SELECTORS.CLOSE_BUTTON);
   }
 };
 

@@ -1,9 +1,13 @@
 import { MessageType, ResponseType, SELECTORS, UserProfile } from '../types';
+import { trackJobApplication, getSession, getCurrentUser, initSupabaseClient } from '../lib/supabase';
 
 let isRunning = false;
 let automationInterval: number | null = null;
 let userData: UserProfile | null = null;
 let continuing = false;
+let isUserTyping = false;
+let lastInputTime = 0;
+const INPUT_IDLE_THRESHOLD = 1000; // 1 second
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -184,6 +188,27 @@ const uploadResume = async (selector: string, base64Data: string): Promise<boole
   return false;
 };
 
+const setupInputListeners = () => {
+  // Listen for any input events on form fields
+  document.addEventListener('input', () => {
+    isUserTyping = true;
+    lastInputTime = Date.now();
+  }, true);
+
+  // Listen for field blur events (user moves to next field)
+  document.addEventListener('blur', () => {
+    isUserTyping = false;
+  }, true);
+};
+
+const isUserStillTyping = async (): Promise<boolean> => {
+  // Check if user is actively typing or recently typed
+  if (isUserTyping) return true;
+  
+  const timeSinceLastInput = Date.now() - lastInputTime;
+  return timeSinceLastInput < INPUT_IDLE_THRESHOLD;
+};
+
 const fillFormFields = async () => {
   if (!userData) return;
 
@@ -271,10 +296,11 @@ const isJobAlreadyApplied = (jobCard: HTMLElement): boolean => {
 
 const findNextJob = (): HTMLElement | null => {
   // Get all job cards
-  const jobCards = document.querySelectorAll(SELECTORS.JOB_CARD);
+  const jobCards = Array.from(document.querySelectorAll(SELECTORS.JOB_CARD));
   
-  for (const card of jobCards) {
-    const jobCard = card as HTMLElement;
+  // Find the first non-applied job
+  for (let i = 0; i < jobCards.length; i++) {
+    const jobCard = jobCards[i] as HTMLElement;
     
     // Skip if not visible
     if (!isElementVisible(jobCard)) {
@@ -294,7 +320,16 @@ const findNextJob = (): HTMLElement | null => {
       continue;
     }
 
+    // Found the next job to apply to
+    console.log('Found next job to apply to');
     return jobCard;
+  }
+  
+  // If we've reached here, we might need to scroll to load more jobs
+  const lastJobCard = jobCards[jobCards.length - 1] as HTMLElement;
+  if (lastJobCard) {
+    console.log('Scrolling to load more jobs...');
+    lastJobCard.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
   
   return null;
@@ -308,12 +343,22 @@ const markJobAsApplied = (jobElement: HTMLElement) => {
   jobElement.setAttribute('data-applied', 'true');
 };
 
-const clickJob = (jobElement: HTMLElement) => {
-  const clickableElement = jobElement.querySelector('a, button') as HTMLElement;
-  if (clickableElement) {
+const clickJob = (jobElement: HTMLElement): boolean => {
+  // First try to find the job title link specifically
+  const jobTitleLink = jobElement.querySelector(SELECTORS.JOB_TITLE_LINK) as HTMLElement;
+  if (jobTitleLink && isElementVisible(jobTitleLink)) {
+    jobTitleLink.click();
+    return true;
+  }
+
+  // Fallback to finding any clickable element if title link isn't found
+  const clickableElement = jobElement.querySelector('a[href*="/jobs/view/"], button[data-job-id]') as HTMLElement;
+  if (clickableElement && isElementVisible(clickableElement)) {
     clickableElement.click();
     return true;
   }
+
+  console.log('No clickable job element found');
   return false;
 };
 
@@ -357,42 +402,63 @@ const areAllFieldsFilled = async (): Promise<boolean> => {
   return true;
 };
 
+const verifySession = async () => {
+  console.log('Verifying session...');
+  const session = await getSession();
+  console.log('Current session:', session);
+  const user = await getCurrentUser();
+  console.log('Current user:', user);
+  return !!session && !!user;
+};
+
 const processApplication = async () => {
   try {
-    // Find the next job to apply to
+    // Add session verification at the start
+    const isAuthenticated = await verifySession();
+    if (!isAuthenticated) {
+      console.error('Not authenticated - please sign in to the extension');
+      return;
+    }
+
+    setupInputListeners();
+    
     const nextJob = findNextJob();
     if (!nextJob) {
       console.log('No more jobs found to apply to');
       return;
     }
 
-    // If the job is already applied to, don't wait with the full delay
+    // Use LinkedIn's specific class names for job details
+    const jobTitleElement = document.querySelector('.t-24.job-details-jobs-unified-top-card__job-title');
+    const companyElement = document.querySelector('.job-details-jobs-unified-top-card__company-name');
+    
+    const jobTitle = jobTitleElement?.textContent?.trim() || 'Unknown Position';
+    const companyName = companyElement?.textContent?.trim() || 'Unknown Company';
+    
+    console.log('Found job details:', { jobTitle, companyName });
+
     if (isJobAlreadyApplied(nextJob)) {
-      await sleep(500); // Just a small delay to prevent too rapid scrolling
-      return; // Skip to next job immediately
+      await sleep(500);
+      return;
     }
 
-    // Scroll to and click the job
     scrollToJob(nextJob);
-    await sleep(1000); // Wait for scroll to complete
-    
+    await sleep(1000);
+
     if (!clickJob(nextJob)) {
       console.log('Could not click the job card');
       return;
     }
+    await sleep(1000);
     
-    await sleep(2000); // Wait for job details to load
-
-    // Click Easy Apply button
     const applied = await clickElement(SELECTORS.EASY_APPLY_BUTTON);
     if (!applied) {
       console.log('No Easy Apply button found');
       return;
     }
 
-    await sleep(1000); // Wait for modal to open
+    await sleep(1000);
 
-    // Keep clicking next until we reach submit or review
     continuing = true;
     let retryCount = 0;
     const maxRetries = 3;
@@ -404,41 +470,49 @@ const processApplication = async () => {
         break;
       }
 
-      await sleep(1000);
+      await sleep(500);
 
       // Try to fill form fields on each step
       await fillFormFields();
       
       // Give time for fields to be filled and validated
-      await sleep(2000);
+      await sleep(500);
 
       // Check if all required fields are filled
       const fieldsAreFilled = await areAllFieldsFilled();
       
       if (!fieldsAreFilled) {
         console.log('Waiting for all required fields to be filled...');
-        // Wait longer to give time for manual input
-        await sleep(5000);
+        await sleep(1000);
         // Check again after waiting
         const recheckedFields = await areAllFieldsFilled();
         if (!recheckedFields) {
           console.log('Fields still not filled, waiting more...');
-          await sleep(5000);
+          await sleep(1000);
           continue;
         }
       }
 
-      // Only proceed with Review/Next/Submit if fields are filled
+      // Wait until user is done typing before proceeding
+      while (await isUserStillTyping()) {
+        console.log('Waiting for user to finish typing...');
+        await sleep(500);
+      }
+
+      // Add a small delay after user is done typing
+      await sleep(1000);
+
+      // Only proceed with Review/Next/Submit if fields are filled and user is done typing
       const reviewed = await clickAnyElement(SELECTORS.REVIEW_BUTTON);
       if (reviewed) {
         console.log('Clicked review button');
-        await sleep(2000);
+        await sleep(500);
         
         // Check fields again in review page
         const reviewFieldsFilled = await areAllFieldsFilled();
         if (!reviewFieldsFilled) {
           console.log('Review page has empty required fields, waiting...');
-          await sleep(5000);
+          await sleep(1000);
           continue;
         }
         
@@ -446,12 +520,52 @@ const processApplication = async () => {
         if (submitted) {
           console.log('Application submitted successfully');
           continuing = false;
+          
+          // Track the application in the database with enhanced error handling
+          try {
+            console.log('Attempting to track application for:', { jobTitle, companyName });
+            const trackingResult = await trackJobApplication(jobTitle, companyName);
+            
+            if (trackingResult) {
+              console.log('Successfully saved application to database:', trackingResult);
+            } else {
+              console.error('Failed to save application to database - trackingResult is null');
+              // Continue with the process even if tracking fails
+            }
+          } catch (error) {
+            console.error('Error while trying to track application:', error);
+            // Continue with the process even if tracking fails
+          }
+          
+          // Wait for the "Application sent" modal
           await sleep(1000);
-          await clickElement(SELECTORS.CLOSE_BUTTON);
+          
+          // Try to find and click the "Done" button in the success modal
+          const doneButton = findButtonByText('Done');
+          if (doneButton) {
+            console.log('Clicking Done button in success modal');
+            doneButton.click();
+            await sleep(500);
+          } else {
+            // Fallback to close button if Done button not found
+            await clickElement(SELECTORS.CLOSE_BUTTON);
+            await sleep(500);
+          }
+          
           markJobAsApplied(nextJob);
-          const delay = userData?.settings?.nextJobDelay || 5000;
+
+          // Use the user's configured delay from settings
+          const delay = userData?.settings?.nextJobDelay || 5000; // Default to 5 seconds if not set
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
+
+          // Find and click the next job card to prepare for the next application
+          const nextJobCard = findNextJob();
+          if (nextJobCard) {
+            scrollToJob(nextJobCard);
+            await sleep(1000);
+            clickJob(nextJobCard);
+          }
         } else {
           retryCount++;
           if (retryCount >= maxRetries) {
@@ -459,19 +573,59 @@ const processApplication = async () => {
             continuing = false;
             await clickElement(SELECTORS.CLOSE_BUTTON);
           }
-          await sleep(1000);
+          await sleep(500);
         }
       } else {
         const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
         if (submitted) {
           console.log('Application submitted successfully');
           continuing = false;
+          
+          // Track the application in the database with enhanced error handling
+          try {
+            console.log('Attempting to track application for:', { jobTitle, companyName });
+            const trackingResult = await trackJobApplication(jobTitle, companyName);
+            
+            if (trackingResult) {
+              console.log('Successfully saved application to database:', trackingResult);
+            } else {
+              console.error('Failed to save application to database - trackingResult is null');
+              // Continue with the process even if tracking fails
+            }
+          } catch (error) {
+            console.error('Error while trying to track application:', error);
+            // Continue with the process even if tracking fails
+          }
+          
+          // Wait for the "Application sent" modal
           await sleep(1000);
-          await clickElement(SELECTORS.CLOSE_BUTTON);
+          
+          // Try to find and click the "Done" button in the success modal
+          const doneButton = findButtonByText('Done');
+          if (doneButton) {
+            console.log('Clicking Done button in success modal');
+            doneButton.click();
+            await sleep(500);
+          } else {
+            // Fallback to close button if Done button not found
+            await clickElement(SELECTORS.CLOSE_BUTTON);
+            await sleep(500);
+          }
+          
           markJobAsApplied(nextJob);
-          const delay = userData?.settings?.nextJobDelay || 5000;
+
+          // Use the user's configured delay from settings
+          const delay = userData?.settings?.nextJobDelay || 5000; // Default to 5 seconds if not set
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
+
+          // Find and click the next job card to prepare for the next application
+          const nextJobCard = findNextJob();
+          if (nextJobCard) {
+            scrollToJob(nextJobCard);
+            await sleep(1000);
+            clickJob(nextJobCard);
+          }
         } else {
           // Only try next button if all fields are properly filled
           const fieldsReady = await areAllFieldsFilled();
@@ -481,7 +635,7 @@ const processApplication = async () => {
             if (hasNext) {
               console.log('Successfully clicked next button');
               retryCount = 0;
-              await sleep(1000);
+              await sleep(500);
             } else {
               console.log('No next button found, waiting...');
               retryCount++;
@@ -490,11 +644,11 @@ const processApplication = async () => {
                 continuing = false;
                 await clickElement(SELECTORS.CLOSE_BUTTON);
               }
-              await sleep(1000);
+              await sleep(500);
             }
           } else {
             console.log('Waiting for fields to be filled before proceeding...');
-            await sleep(5000);
+            await sleep(1000);
           }
         }
       }
@@ -509,14 +663,12 @@ const processApplication = async () => {
 const startAutomation = () => {
   console.log('Starting automation...');
   isRunning = true;
-  continuing = false; // Reset the continuing flag
+  continuing = false;
   
-  // Store the running state
   chrome.storage.local.set({ isAutomationRunning: true }, () => {
     console.log('Automation state saved: running');
   });
   
-  // Clear any existing interval first
   if (automationInterval) {
     window.clearInterval(automationInterval);
     automationInterval = null;
@@ -532,10 +684,10 @@ const startAutomation = () => {
       return;
     }
 
-    if (!continuing) { // Only start a new process if not currently running one
+    if (!continuing) {
       await processApplication();
     }
-  }, 3000); // Process every 3 seconds instead of 5
+  }, 1000); // Reduced from 3000ms to 1000ms
 };
 
 const stopAutomation = () => {
@@ -555,18 +707,31 @@ const stopAutomation = () => {
 };
 
 // Initialize state when content script loads
-const initializeState = () => {
-  chrome.storage.local.get(['isAutomationRunning', 'userData'], (result) => {
-    if (result.isAutomationRunning) {
-      console.log('Restoring automation state: running');
-      userData = result.userData;
-      startAutomation();
-    } else {
-      console.log('Restoring automation state: stopped');
-      isRunning = false;
-      continuing = false;
+const initializeState = async () => {
+  try {
+    // First initialize the Supabase client with stored session
+    const isAuthenticated = await initSupabaseClient();
+    console.log('Supabase client initialized, authenticated:', isAuthenticated);
+
+    if (!isAuthenticated) {
+      console.error('Failed to initialize Supabase client - please sign in to the extension');
+      return;
     }
-  });
+
+    chrome.storage.local.get(['isAutomationRunning', 'userData'], (result) => {
+      if (result.isAutomationRunning) {
+        console.log('Restoring automation state: running');
+        userData = result.userData;
+        startAutomation();
+      } else {
+        console.log('Restoring automation state: stopped');
+        isRunning = false;
+        continuing = false;
+      }
+    });
+  } catch (error) {
+    console.error('Error during initialization:', error);
+  }
 };
 
 // Listen for messages from the background script
@@ -576,25 +741,26 @@ chrome.runtime.onMessage.addListener((
   sendResponse: (response: ResponseType) => void
 ) => {
   if (message.type === 'START_AUTOMATION') {
-    // Get user data before starting automation
-    chrome.storage.local.get(['userData'], (result) => {
-      userData = result.userData;
-      startAutomation();
-      sendResponse({ success: true, isRunning: true });
-    });
+    startAutomation();
+    sendResponse({ isRunning: true, success: true });
   } else if (message.type === 'STOP_AUTOMATION') {
     stopAutomation();
-    sendResponse({ success: true, isRunning: false });
+    sendResponse({ isRunning: false, success: true });
   } else if (message.type === 'GET_STATE') {
-    // Get the current state from storage to ensure consistency
-    chrome.storage.local.get(['isAutomationRunning'], (result) => {
-      sendResponse({ 
-        success: true, 
-        isRunning: result.isAutomationRunning || false 
-      });
+    sendResponse({ isRunning });
+  } else if (message.type === 'AUTH_STATE_CHANGED') {
+    // Reinitialize the Supabase client when auth state changes
+    console.log('Received auth state change notification');
+    initSupabaseClient().then(isAuthenticated => {
+      console.log('Reinitialized Supabase client, authenticated:', isAuthenticated);
+      if (!isAuthenticated && isRunning) {
+        // Stop automation if we're no longer authenticated
+        stopAutomation();
+      }
     });
+    sendResponse({ success: true });
   }
-  return true; // Required for async response
+  return true;
 });
 
 // Add cleanup on page unload

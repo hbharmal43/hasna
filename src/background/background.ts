@@ -15,7 +15,7 @@ chrome.runtime.onMessage.addListener((
         chrome.tabs.sendMessage(tabs[0].id, { type: 'START_AUTOMATION' });
       }
     });
-    sendResponse({ success: true });
+    sendResponse({ isRunning: true, success: true });
   } else if (message.type === 'STOP_AUTOMATION') {
     isRunning = false;
     // Notify content script to stop automation
@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((
         chrome.tabs.sendMessage(tabs[0].id, { type: 'STOP_AUTOMATION' });
       }
     });
-    sendResponse({ success: true });
+    sendResponse({ isRunning: false, success: true });
   } else if (message.type === 'GET_STATE') {
     sendResponse({ isRunning });
   }

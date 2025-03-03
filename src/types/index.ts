@@ -1,15 +1,17 @@
-export type MessageType = 
-  | { type: 'START_AUTOMATION' }
-  | { type: 'STOP_AUTOMATION' }
-  | { type: 'GET_STATE' }
-  | { type: 'SAVE_USER_DATA'; data: UserProfile }
-  | { type: 'GET_USER_DATA' };
-
-export type ResponseType = {
-  success?: boolean;
-  isRunning?: boolean;
-  userData?: UserProfile;
+export type MessageType = {
+  type: 'START_AUTOMATION' | 'STOP_AUTOMATION' | 'GET_STATE' | 'AUTH_STATE_CHANGED' | 'SAVE_USER_DATA';
+  data?: any;
+  settings?: {
+    nextJobDelay: number;
+  };
 };
+
+export interface ResponseType {
+  isRunning?: boolean;
+  error?: string;
+  success?: boolean;
+  userData?: UserProfile;
+}
 
 export interface UserProfile {
   firstName: string;
@@ -17,18 +19,15 @@ export interface UserProfile {
   email: string;
   phone: string;
   location: string;
-  experience: WorkExperience[];
-  education: Education[];
+  experience: any[];
+  education: any[];
   skills: string[];
-  resume: string; // Base64 encoded resume file
-  coverLetter?: string;
+  resume: string;
+  additionalQuestions: Record<string, string>;
   linkedin?: string;
   website?: string;
-  additionalQuestions: {
-    [key: string]: string; // Question -> Answer mapping
-  };
   settings: {
-    nextJobDelay: number; // Delay in milliseconds between jobs
+    nextJobDelay: number;
   };
 }
 
@@ -74,6 +73,7 @@ export type Selectors = {
   MULTIPLE_CHOICE: string;
   TEXT_INPUT: string;
   TEXT_AREA: string;
+  NEXT_PAGE_BUTTON: string;
 };
 
 export const SELECTORS: Selectors = {
@@ -97,6 +97,7 @@ export const SELECTORS: Selectors = {
   JOB_CARD: '.job-card-container, .jobs-search-results__list-item',
   JOB_TITLE_LINK: '.job-card-container__link',
   JOBS_LIST: '.jobs-search-results-list',
+  NEXT_PAGE_BUTTON: 'button[aria-label="Next"]',
   // Form field selectors
   FIRST_NAME_INPUT: 'input[name*="first" i]',
   LAST_NAME_INPUT: 'input[name*="last" i]',

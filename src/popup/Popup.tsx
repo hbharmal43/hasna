@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { MessageType, ResponseType, UserProfile } from '../types';
 import SignIn from '../components/SignIn';
-import { getCurrentUser, signOut } from '../lib/supabase';
+import { getCurrentUser, signOut, getUserProfile } from '../lib/supabase';
+import ProfileTab from '../components/ProfileTab';
 
 const Container = styled.div`
   width: 400px;
@@ -273,17 +274,184 @@ const HelpText = styled.small`
   }
 `;
 
+const ProfileContent = styled.div`
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 0 16px 16px 0;
+  margin: 0 -16px 0 0;
+  
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 20px;
+  }
+`;
+
+const Section = styled.div`
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  border: 1px solid #edf2f7;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+`;
+
+const SectionTitle = styled.h3`
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const Grid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+`;
+
+const ProfileHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+`;
+
+const Avatar = styled.div<{ url?: string }>`
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: ${props => props.url ? `url(${props.url}) center/cover` : '#f1f5f9'};
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+`;
+
+const ProfileInfo = styled.div`
+  flex: 1;
+`;
+
+const ProfileName = styled.h2`
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 4px 0;
+`;
+
+const ProfileTitle = styled.div`
+  font-size: 14px;
+  color: #64748b;
+`;
+
+const ExperienceItem = styled.div`
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #fff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const CompanyTitle = styled.div`
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 4px;
+  font-size: 14px;
+`;
+
+const DateLocation = styled.div`
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  &:before {
+    content: '•';
+    color: #cbd5e1;
+  }
+`;
+
+const Description = styled.div`
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  white-space: pre-wrap;
+`;
+
+const SkillTag = styled.span`
+  background: #f1f5f9;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  margin-right: 6px;
+  margin-bottom: 6px;
+  display: inline-block;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #fff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  }
+`;
+
+const SocialLink = styled.a`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #f8fafc;
+    color: #1e293b;
+  }
+`;
+
 const defaultUserData: UserProfile = {
-  firstName: '',
-  lastName: '',
-  email: '',
+  full_name: '',
+  title: '',
   phone: '',
   location: '',
-  experience: [],
+  bio: '',
   education: [],
+  experience: [],
+  projects: [],
   skills: [],
-  resume: '',
-  additionalQuestions: {},
+  languages: [],
+  socials: {},
+  daily_goal: 10,
   settings: {
     nextJobDelay: 5000 // Default 5 seconds
   }
@@ -297,20 +465,64 @@ const Popup: React.FC = () => {
   const [delay, setDelay] = useState(5);
 
   useEffect(() => {
-    checkAuth();
-    checkAutomationState();
-
-    // Get saved user data
-    chrome.storage.local.get(['userData'], (result) => {
-      if (result.userData) {
-        setUserData(result.userData);
+    const initializeData = async () => {
+      const authResult = await checkAuth();
+      if (!authResult) {
+        console.log('⚠️ [Popup] Skipping profile fetch - not authenticated');
+        return;
       }
-    });
+
+      // Check automation state when popup opens
+      checkAutomationState();
+
+      // Get saved user data from storage first
+      chrome.storage.local.get(['userData'], async (result) => {
+        if (result.userData) {
+          console.log('📦 [Popup] Found stored user data');
+          setUserData(result.userData);
+          // Set the delay from saved settings
+          if (result.userData.settings?.nextJobDelay) {
+            const savedDelay = Math.floor(result.userData.settings.nextJobDelay / 1000);
+            console.log('⚙️ [Popup] Loading saved delay:', savedDelay, 'seconds');
+            setDelay(savedDelay);
+          }
+        }
+        
+        // Then fetch latest profile data from Supabase
+        try {
+          console.log('🔄 [Popup] Fetching fresh profile data...');
+          const profileData = await getUserProfile();
+          
+          if (profileData) {
+            console.log('✅ [Popup] Updating with new profile data');
+            const updatedData = {
+              ...defaultUserData,
+              ...profileData,
+              settings: {
+                ...defaultUserData.settings,
+                nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
+              }
+            };
+            
+            setUserData(updatedData);
+            await chrome.storage.local.set({ userData: updatedData });
+            console.log('💾 [Popup] Saved updated profile data');
+          } else {
+            console.log('⚠️ [Popup] No profile data received from database');
+          }
+        } catch (error) {
+          console.error('❌ [Popup] Profile fetch error:', error);
+        }
+      });
+    };
+
+    initializeData();
 
     // Listen for state changes
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
       if (changes.isAutomationRunning) {
         setIsRunning(changes.isAutomationRunning.newValue);
+        console.log('🔄 [Popup] Automation state updated:', changes.isAutomationRunning.newValue);
       }
     };
 
@@ -321,25 +533,39 @@ const Popup: React.FC = () => {
     };
   }, []);
 
+  // Add a new useEffect to check automation state when switching to automation tab
+  useEffect(() => {
+    if (activeTab === 'automation') {
+      checkAutomationState();
+    }
+  }, [activeTab]);
+
   const checkAuth = async () => {
     try {
       const user = await getCurrentUser();
       setIsAuthenticated(!!user);
+      return !!user;
     } catch (error) {
       console.error('Auth check failed:', error);
       setIsAuthenticated(false);
+      return false;
     }
   };
 
   const checkAutomationState = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
+        console.log('🔍 [Popup] Checking automation state...');
         chrome.tabs.sendMessage(
           tabs[0].id,
           { type: 'GET_STATE' } as MessageType,
           (response: ResponseType) => {
             if (response?.isRunning !== undefined) {
+              console.log('✅ [Popup] Current automation state:', response.isRunning);
               setIsRunning(response.isRunning);
+            } else {
+              console.log('⚠️ [Popup] No response from content script, assuming not running');
+              setIsRunning(false);
             }
           }
         );
@@ -396,10 +622,18 @@ const Popup: React.FC = () => {
     }
   };
 
-  const handleSave = () => {
-    chrome.storage.local.set({ userData }, () => {
-      console.log('Profile saved successfully');
-    });
+  const handleSave = async () => {
+    const updatedData = {
+      ...userData,
+      settings: {
+        ...userData.settings,
+        nextJobDelay: delay * 1000 // Convert seconds to milliseconds
+      }
+    };
+    
+    setUserData(updatedData);
+    await chrome.storage.local.set({ userData: updatedData });
+    console.log('💾 [Popup] Saved settings:', updatedData.settings);
   };
 
   if (!isAuthenticated) {
@@ -447,81 +681,7 @@ const Popup: React.FC = () => {
             {isRunning ? 'Stop Automation' : 'Start Automation'}
           </Button>
         ) : activeTab === 'profile' ? (
-          <Form onSubmit={handleSaveProfile}>
-            <FormGroup>
-              <Label>First Name</Label>
-              <Input
-                type="text"
-                value={userData.firstName}
-                onChange={e => setUserData(prev => ({ ...prev, firstName: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Last Name</Label>
-              <Input
-                type="text"
-                value={userData.lastName}
-                onChange={e => setUserData(prev => ({ ...prev, lastName: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={userData.email}
-                onChange={e => setUserData(prev => ({ ...prev, email: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Phone</Label>
-              <Input
-                type="tel"
-                value={userData.phone}
-                onChange={e => setUserData(prev => ({ ...prev, phone: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Location</Label>
-              <Input
-                type="text"
-                value={userData.location}
-                onChange={e => setUserData(prev => ({ ...prev, location: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Resume (PDF)</Label>
-              <Input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>LinkedIn URL (Optional)</Label>
-              <Input
-                type="url"
-                value={userData.linkedin || ''}
-                onChange={e => setUserData(prev => ({ ...prev, linkedin: e.target.value }))}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Website/Portfolio (Optional)</Label>
-              <Input
-                type="url"
-                value={userData.website || ''}
-                onChange={e => setUserData(prev => ({ ...prev, website: e.target.value }))}
-              />
-            </FormGroup>
-
-            <Button type="submit" onClick={handleSave}>Save Profile</Button>
-          </Form>
+          <ProfileTab profile={userData} />
         ) : (
           <Form>
             <FormGroup>
@@ -531,7 +691,11 @@ const Popup: React.FC = () => {
                 min="1"
                 max="30"
                 value={delay}
-                onChange={(e) => setDelay(Math.max(1, Math.min(30, Number(e.target.value))))}
+                onChange={(e) => {
+                  const newDelay = Math.max(1, Math.min(30, Number(e.target.value)));
+                  setDelay(newDelay);
+                  handleSave(); // Save immediately when delay changes
+                }}
                 placeholder="Delay between jobs (seconds)"
               />
               <HelpText>

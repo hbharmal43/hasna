@@ -215,13 +215,13 @@ const fillFormFields = async () => {
   try {
     // Fill basic information only if fields are empty
     const fieldsToFill = [
-      { selector: SELECTORS.FIRST_NAME_INPUT, value: userData.firstName },
-      { selector: SELECTORS.LAST_NAME_INPUT, value: userData.lastName },
-      { selector: SELECTORS.EMAIL_INPUT, value: userData.email },
+      { selector: SELECTORS.FIRST_NAME_INPUT, value: userData.full_name.split(' ')[0] },
+      { selector: SELECTORS.LAST_NAME_INPUT, value: userData.full_name.split(' ').slice(1).join(' ') },
+      { selector: SELECTORS.EMAIL_INPUT, value: userData.socials?.email || '' },
       { selector: SELECTORS.PHONE_INPUT, value: userData.phone },
       { selector: SELECTORS.LOCATION_INPUT, value: userData.location },
-      { selector: SELECTORS.LINKEDIN_INPUT, value: userData.linkedin },
-      { selector: SELECTORS.WEBSITE_INPUT, value: userData.website }
+      { selector: SELECTORS.LINKEDIN_INPUT, value: userData.socials?.linkedin || '' },
+      { selector: SELECTORS.WEBSITE_INPUT, value: userData.socials?.website || '' }
     ];
 
     // Fill each field only if it's empty and visible
@@ -230,43 +230,80 @@ const fillFormFields = async () => {
         const element = document.querySelector(field.selector) as HTMLInputElement;
         if (element && isElementVisible(element) && isFieldEmpty(element)) {
           await fillInput(field.selector, field.value);
-          // Add a small delay between fills to prevent overwhelming the form
           await sleep(100);
         }
       }
     }
 
     // Upload resume only if no file is selected
-    if (userData.resume) {
-      await uploadResume(SELECTORS.RESUME_INPUT, userData.resume);
+    if (userData.resume_url) {
+      await uploadResume(SELECTORS.RESUME_INPUT, userData.resume_url);
     }
 
-    // Handle additional questions - only fill empty fields
-    const textInputs = document.querySelectorAll(SELECTORS.TEXT_INPUT);
-    const textAreas = document.querySelectorAll(SELECTORS.TEXT_AREA);
-    const selects = document.querySelectorAll(SELECTORS.MULTIPLE_CHOICE);
+    // Handle experience and education questions
+    const textInputs = Array.from(document.querySelectorAll(SELECTORS.TEXT_INPUT)) as HTMLInputElement[];
+    const textAreas = Array.from(document.querySelectorAll(SELECTORS.TEXT_AREA)) as HTMLTextAreaElement[];
+    const selects = Array.from(document.querySelectorAll(SELECTORS.MULTIPLE_CHOICE)) as HTMLSelectElement[];
 
     // Process each type of field with a delay between fills
     for (const element of [...textInputs, ...textAreas]) {
-      if (!isElementVisible(element as HTMLElement) || !isFieldEmpty(element as HTMLInputElement | HTMLTextAreaElement)) {
-        continue;
-      }
+      if (isElementVisible(element) && isFieldEmpty(element)) {
+        const label = element.getAttribute('aria-label')?.toLowerCase() || 
+                     element.getAttribute('placeholder')?.toLowerCase() || 
+                     element.id.toLowerCase();
 
-      const question = element.getAttribute('aria-label')?.toLowerCase() || 
-                      element.getAttribute('placeholder')?.toLowerCase() || '';
-      
-      for (const [key, value] of Object.entries(userData.additionalQuestions)) {
-        if (question.includes(key.toLowerCase())) {
+        // Try to find relevant information based on the field label
+        let value = '';
+
+        // Check for experience-related fields
+        if (label.includes('experience') || label.includes('work')) {
+          const latestExp = userData.experience[0];
+          if (latestExp) {
+            value = `${latestExp.title} at ${latestExp.company} - ${latestExp.description}`;
+          }
+        }
+        
+        // Check for education-related fields
+        else if (label.includes('education') || label.includes('degree')) {
+          const latestEdu = userData.education[0];
+          if (latestEdu) {
+            value = `${latestEdu.degree} from ${latestEdu.school}`;
+          }
+        }
+        
+        // Check for skills-related fields
+        else if (label.includes('skills') || label.includes('technologies')) {
+          value = userData.skills.join(', ');
+        }
+
+        if (value) {
           if (element instanceof HTMLTextAreaElement) {
-            await fillTextArea(element.tagName, value);
-          } else if (element instanceof HTMLInputElement) {
-            await fillInput(element.tagName, value);
+            await fillTextArea(`#${element.id}`, value);
+          } else {
+            await fillInput(`#${element.id}`, value);
           }
           await sleep(100);
-          break;
         }
       }
     }
+
+    // Handle select fields (dropdowns)
+    for (const select of selects) {
+      if (isElementVisible(select) && isFieldEmpty(select)) {
+        const label = select.getAttribute('aria-label')?.toLowerCase() || select.id.toLowerCase();
+        
+        // Try to find relevant information based on the field label
+        if (label.includes('experience') || label.includes('years')) {
+          const yearsOfExp = userData.experience.length > 0 ? '3-5 years' : '1-2 years';
+          await selectOption(`#${select.id}`, yearsOfExp);
+        }
+        else if (label.includes('education') || label.includes('degree')) {
+          const highestDegree = userData.education.length > 0 ? userData.education[0].degree : "Bachelor's degree";
+          await selectOption(`#${select.id}`, highestDegree);
+        }
+      }
+    }
+
   } catch (error) {
     console.error('Error filling form fields:', error);
   }
@@ -411,6 +448,41 @@ const verifySession = async () => {
   return !!session && !!user;
 };
 
+const trackSuccessfulApplication = async (jobTitle: string, companyName: string, jobElement: HTMLElement): Promise<boolean> => {
+  try {
+    console.log('🎯 Tracking successful application:', { jobTitle, companyName });
+    
+    // Try to track the application with retries
+    const maxAttempts = 3;
+    let attempt = 0;
+    let trackingResult = null;
+
+    while (attempt < maxAttempts && !trackingResult) {
+      trackingResult = await trackJobApplication(jobTitle, companyName);
+      
+      if (!trackingResult && attempt < maxAttempts - 1) {
+        attempt++;
+        console.log(`Retrying database save (attempt ${attempt + 1}/${maxAttempts})...`);
+        await sleep(1000 * attempt); // Increasing delay between retries
+      }
+    }
+    
+    if (trackingResult) {
+      console.log('✅ Application saved to database:', trackingResult);
+      // Only mark as applied in UI if successfully saved to database
+      markJobAsApplied(jobElement);
+      return true;
+    } else {
+      console.error('❌ Failed to save application after all attempts');
+      // If we couldn't save to database, don't mark as applied
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error tracking application:', error);
+    return false;
+  }
+};
+
 const processApplication = async () => {
   try {
     // Add session verification at the start
@@ -519,51 +591,50 @@ const processApplication = async () => {
         const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
         if (submitted) {
           console.log('Application submitted successfully');
-          continuing = false;
           
-          // Track the application in the database with enhanced error handling
-          try {
-            console.log('Attempting to track application for:', { jobTitle, companyName });
-            const trackingResult = await trackJobApplication(jobTitle, companyName);
-            
-            if (trackingResult) {
-              console.log('Successfully saved application to database:', trackingResult);
-            } else {
-              console.error('Failed to save application to database - trackingResult is null');
-              // Continue with the process even if tracking fails
-            }
-          } catch (error) {
-            console.error('Error while trying to track application:', error);
-            // Continue with the process even if tracking fails
+          // Wait a bit longer before tracking to ensure the submission is complete
+          await sleep(2000);
+          
+          // Track the application and wait for confirmation
+          const tracked = await trackSuccessfulApplication(jobTitle, companyName, nextJob);
+          if (!tracked) {
+            console.error('Failed to track application in database - stopping automation');
+            continuing = false;
+            isRunning = false;
+            await clickElement(SELECTORS.CLOSE_BUTTON);
+            return;
           }
           
+          continuing = false;
+          
           // Wait for the "Application sent" modal
-          await sleep(1000);
+          await sleep(1500);
           
           // Try to find and click the "Done" button in the success modal
           const doneButton = findButtonByText('Done');
           if (doneButton) {
             console.log('Clicking Done button in success modal');
             doneButton.click();
-            await sleep(500);
+            await sleep(1000);
           } else {
             // Fallback to close button if Done button not found
             await clickElement(SELECTORS.CLOSE_BUTTON);
-            await sleep(500);
+            await sleep(1000);
           }
-          
-          markJobAsApplied(nextJob);
 
-          // Use the user's configured delay from settings
-          const delay = userData?.settings?.nextJobDelay || 5000; // Default to 5 seconds if not set
+          // Use the user's configured delay from settings, but ensure minimum delay
+          const configuredDelay = userData?.settings?.nextJobDelay || 5000;
+          const minDelay = 5000; // Minimum 5 seconds
+          const delay = Math.max(configuredDelay, minDelay);
+          
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
 
-          // Find and click the next job card to prepare for the next application
+          // Only proceed to next job if database insertion was successful
           const nextJobCard = findNextJob();
           if (nextJobCard) {
             scrollToJob(nextJobCard);
-            await sleep(1000);
+            await sleep(1500);
             clickJob(nextJobCard);
           }
         } else {
@@ -579,51 +650,50 @@ const processApplication = async () => {
         const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
         if (submitted) {
           console.log('Application submitted successfully');
-          continuing = false;
           
-          // Track the application in the database with enhanced error handling
-          try {
-            console.log('Attempting to track application for:', { jobTitle, companyName });
-            const trackingResult = await trackJobApplication(jobTitle, companyName);
-            
-            if (trackingResult) {
-              console.log('Successfully saved application to database:', trackingResult);
-            } else {
-              console.error('Failed to save application to database - trackingResult is null');
-              // Continue with the process even if tracking fails
-            }
-          } catch (error) {
-            console.error('Error while trying to track application:', error);
-            // Continue with the process even if tracking fails
+          // Wait a bit longer before tracking to ensure the submission is complete
+          await sleep(2000);
+          
+          // Track the application and wait for confirmation
+          const tracked = await trackSuccessfulApplication(jobTitle, companyName, nextJob);
+          if (!tracked) {
+            console.error('Failed to track application in database - stopping automation');
+            continuing = false;
+            isRunning = false;
+            await clickElement(SELECTORS.CLOSE_BUTTON);
+            return;
           }
           
+          continuing = false;
+          
           // Wait for the "Application sent" modal
-          await sleep(1000);
+          await sleep(1500);
           
           // Try to find and click the "Done" button in the success modal
           const doneButton = findButtonByText('Done');
           if (doneButton) {
             console.log('Clicking Done button in success modal');
             doneButton.click();
-            await sleep(500);
+            await sleep(1000);
           } else {
             // Fallback to close button if Done button not found
             await clickElement(SELECTORS.CLOSE_BUTTON);
-            await sleep(500);
+            await sleep(1000);
           }
-          
-          markJobAsApplied(nextJob);
 
-          // Use the user's configured delay from settings
-          const delay = userData?.settings?.nextJobDelay || 5000; // Default to 5 seconds if not set
+          // Use the user's configured delay from settings, but ensure minimum delay
+          const configuredDelay = userData?.settings?.nextJobDelay || 5000;
+          const minDelay = 5000; // Minimum 5 seconds
+          const delay = Math.max(configuredDelay, minDelay);
+          
           console.log(`Waiting ${delay/1000} seconds before next job...`);
           await sleep(delay);
 
-          // Find and click the next job card to prepare for the next application
+          // Only proceed to next job if database insertion was successful
           const nextJobCard = findNextJob();
           if (nextJobCard) {
             scrollToJob(nextJobCard);
-            await sleep(1000);
+            await sleep(1500);
             clickJob(nextJobCard);
           }
         } else {
@@ -734,32 +804,39 @@ const initializeState = async () => {
   }
 };
 
-// Listen for messages from the background script
-chrome.runtime.onMessage.addListener((
-  message: MessageType,
-  sender: chrome.runtime.MessageSender,
-  sendResponse: (response: ResponseType) => void
-) => {
-  if (message.type === 'START_AUTOMATION') {
-    startAutomation();
-    sendResponse({ isRunning: true, success: true });
-  } else if (message.type === 'STOP_AUTOMATION') {
-    stopAutomation();
-    sendResponse({ isRunning: false, success: true });
-  } else if (message.type === 'GET_STATE') {
-    sendResponse({ isRunning });
-  } else if (message.type === 'AUTH_STATE_CHANGED') {
-    // Reinitialize the Supabase client when auth state changes
-    console.log('Received auth state change notification');
-    initSupabaseClient().then(isAuthenticated => {
-      console.log('Reinitialized Supabase client, authenticated:', isAuthenticated);
-      if (!isAuthenticated && isRunning) {
-        // Stop automation if we're no longer authenticated
-        stopAutomation();
+// Message listener
+chrome.runtime.onMessage.addListener((message: MessageType, sender, sendResponse: (response: ResponseType) => void) => {
+  console.log('Received message:', message);
+  
+  switch (message.type) {
+    case 'START_AUTOMATION':
+      if (message.settings) {
+        console.log('Updating settings:', message.settings);
+        userData = {
+          ...userData,
+          settings: {
+            ...userData?.settings,
+            nextJobDelay: message.settings.nextJobDelay
+          }
+        };
       }
-    });
-    sendResponse({ success: true });
+      startAutomation();
+      sendResponse({ isRunning: true });
+      break;
+      
+    case 'STOP_AUTOMATION':
+      stopAutomation();
+      sendResponse({ isRunning: false });
+      break;
+      
+    case 'GET_STATE':
+      sendResponse({ isRunning });
+      break;
+      
+    default:
+      sendResponse({ isRunning });
   }
+  
   return true;
 });
 

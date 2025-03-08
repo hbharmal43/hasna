@@ -1,198 +1,531 @@
-Table and column
+Table Name
 
-| table_name         | column_name            | data_type                | column_default                | is_nullable | character_maximum_length |
-| ------------------ | ---------------------- | ------------------------ | ----------------------------- | ----------- | ------------------------ |
-| applications       | id                     | uuid                     | uuid_generate_v4()            | NO          | null                     |
-| applications       | user_id                | uuid                     | null                          | NO          | null                     |
-| applications       | position               | text                     | null                          | NO          | null                     |
-| applications       | company                | text                     | null                          | NO          | null                     |
-| applications       | location               | text                     | null                          | YES         | null                     |
-| applications       | work_type              | USER-DEFINED             | 'onsite'::work_type           | YES         | null                     |
-| applications       | salary_min             | integer                  | null                          | YES         | null                     |
-| applications       | salary_max             | integer                  | null                          | YES         | null                     |
-| applications       | salary_currency        | text                     | 'USD'::text                   | YES         | null                     |
-| applications       | applied_date           | timestamp with time zone | now()                         | YES         | null                     |
-| applications       | apply_time             | integer                  | null                          | YES         | null                     |
-| applications       | source                 | text                     | null                          | YES         | null                     |
-| applications       | status                 | USER-DEFINED             | 'applied'::application_status | YES         | null                     |
-| applications       | company_url            | text                     | null                          | YES         | null                     |
-| applications       | job_description        | text                     | null                          | YES         | null                     |
-| applications       | notes                  | text                     | null                          | YES         | null                     |
-| applications       | created_at             | timestamp with time zone | now()                         | YES         | null                     |
-| applications       | updated_at             | timestamp with time zone | now()                         | YES         | null                     |
-| applications       | application_type       | text                     | 'standard'::text              | YES         | null                     |
-| extension_activity | id                     | uuid                     | uuid_generate_v4()            | NO          | null                     |
-| extension_activity | user_id                | uuid                     | null                          | NO          | null                     |
-| extension_activity | action                 | text                     | null                          | NO          | null                     |
-| extension_activity | created_at             | timestamp with time zone | now()                         | YES         | null                     |
-| extension_activity | metadata               | jsonb                    | '{}'::jsonb                   | YES         | null                     |
-| profiles           | id                     | uuid                     | null                          | NO          | null                     |
-| profiles           | full_name              | text                     | null                          | YES         | null                     |
-| profiles           | title                  | text                     | null                          | YES         | null                     |
-| profiles           | location               | text                     | null                          | YES         | null                     |
-| profiles           | phone                  | text                     | null                          | YES         | null                     |
-| profiles           | bio                    | text                     | null                          | YES         | null                     |
-| profiles           | skills                 | ARRAY                    | null                          | YES         | null                     |
-| profiles           | experience             | text                     | null                          | YES         | null                     |
-| profiles           | education              | text                     | null                          | YES         | null                     |
-| profiles           | created_at             | timestamp with time zone | now()                         | YES         | null                     |
-| profiles           | updated_at             | timestamp with time zone | now()                         | YES         | null                     |
-| profiles           | daily_goal             | integer                  | 10                            | YES         | null                     |
-| profiles           | extension_access_token | uuid                     | null                          | YES         | null                     |
-| profiles           | extension_last_used    | timestamp with time zone | null                          | YES         | null                     |
-| profiles           | extension_status       | boolean                  | false                         | YES         | null                     |
+[
+  {
+    "table_name": "applications"
+  },
+  {
+    "table_name": "recent_applications"
+  },
+  {
+    "table_name": "extension_activity"
+  },
+  {
+    "table_name": "profiles"
+  }
+]
+
+All applications data
+
+[
+  {
+    "id": "e8aafaf2-43a8-4c9c-9cfb-5a2aca2ae691",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Programmer",
+    "company": "Delta Fountains",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 14:48:54.672+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 14:48:53.85638+00",
+    "updated_at": "2025-03-03 14:48:53.85638+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "617b3992-1b0f-4fc9-8b6a-d2af1059f1ee",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Software Engineer (Full Stack)",
+    "company": "Algorized",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 14:50:41.955+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 14:50:41.170132+00",
+    "updated_at": "2025-03-03 14:50:41.170132+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "ff9ebe56-c99f-4fab-ae46-9cdecd90a55f",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Full Stack Engineer",
+    "company": "Jointly",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 14:57:55.54+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 14:57:54.713412+00",
+    "updated_at": "2025-03-03 14:57:54.713412+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "3b7bd106-0d27-4e72-a241-5f37e89db578",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "iOS Engineer",
+    "company": "Intro",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:19:43.342+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:19:42.346332+00",
+    "updated_at": "2025-03-03 19:19:42.346332+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "3df555ca-7d02-4867-aa43-24931adff578",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Database Engineer",
+    "company": "Unknown Company",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:24:57.068+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:24:56.071272+00",
+    "updated_at": "2025-03-03 19:24:56.071272+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "78b94496-340e-4fe6-b96f-7345c0394f2a",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Database Engineer",
+    "company": "TEK NINJAS",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:25:03.744+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:25:02.684319+00",
+    "updated_at": "2025-03-03 19:25:02.684319+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "4d53aff5-9aa7-4e1c-98cd-16cf6e1f74c2",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "DevOps Engineer",
+    "company": "Next Ventures",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:37:34.968+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:37:33.916168+00",
+    "updated_at": "2025-03-03 19:37:33.916168+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "abb6a74e-234c-4340-904f-8fb5880597e2",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "React Software Engineer",
+    "company": "Jobot Consulting",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:40:46.84+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:40:45.820203+00",
+    "updated_at": "2025-03-03 19:40:45.820203+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "a0410058-8786-45dd-96cd-33bb7d4b42fb",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Senior SoC Microarchitect",
+    "company": "Xcelerium",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:40:57.912+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:40:57.488552+00",
+    "updated_at": "2025-03-03 19:40:57.488552+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "e821fc15-0ec8-447f-945c-b473e965a2bb",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Cleared Kubernetes Engineer",
+    "company": "Immersive Wisdom",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:41:25.893+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:41:25.559209+00",
+    "updated_at": "2025-03-03 19:41:25.559209+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "c769c958-41e4-4e1e-9518-333bf60af2d7",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Senior Software Engineer",
+    "company": "HUCKLE Inc.",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:43:23.338+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:43:22.282681+00",
+    "updated_at": "2025-03-03 19:43:22.282681+00",
+    "application_type": "easy_apply"
+  },
+  {
+    "id": "f96e4343-a7c4-4899-a4c6-031230f1e352",
+    "user_id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "position": "Embedded Software Engineer",
+    "company": "EVONA",
+    "location": null,
+    "work_type": "onsite",
+    "salary_min": null,
+    "salary_max": null,
+    "salary_currency": "USD",
+    "applied_date": "2025-03-03 19:43:32.863+00",
+    "apply_time": null,
+    "source": "linkedin",
+    "status": "applied",
+    "company_url": null,
+    "job_description": null,
+    "notes": null,
+    "created_at": "2025-03-03 19:43:31.803268+00",
+    "updated_at": "2025-03-03 19:43:31.803268+00",
+    "application_type": "easy_apply"
+  }
+]
+
+Profile data (really imp)
+
+[
+  {
+    "id": "cd4eedd9-37d4-4fc8-956f-3e53e76006d7",
+    "full_name": "",
+    "title": "",
+    "phone": "",
+    "location": "",
+    "bio": "",
+    "education": [],
+    "experience": [
+      {
+        "id": "1a580303-18d7-429d-862d-dfaea6b5ef7d",
+        "date": "Present",
+        "title": "Software Dev",
+        "company": "UT Arlington",
+        "location": "Dallas",
+        "description": "hi"
+      }
+    ],
+    "projects": [],
+    "skills": [],
+    "languages": [],
+    "socials": {},
+    "created_at": "2025-03-03 20:18:38.662927+00",
+    "updated_at": "2025-03-03 21:33:21.559716+00",
+    "resume_url": "https://tedelpcjgknjnlhezsdo.supabase.co/storage/v1/object/public/resumes/cd4eedd9-37d4-4fc8-956f-3e53e76006d7/e4d1c8a8-26fb-47fa-90fd-ecf182304285.docx",
+    "avatar_url": "https://tedelpcjgknjnlhezsdo.supabase.co/storage/v1/object/public/avatars/cd4eedd9-37d4-4fc8-956f-3e53e76006d7/3de7abc3-6193-47e0-a80c-097b2bf09d1b.png",
+    "daily_goal": 25
+  }
+]
+
+Table Structure for applications 
+[
+  {
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "column_name": "position",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "column_name": "company",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "column_name": "location",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "work_type",
+    "data_type": "USER-DEFINED",
+    "is_nullable": "YES",
+    "column_default": "'onsite'::work_type"
+  },
+  {
+    "column_name": "salary_min",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "salary_max",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "salary_currency",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": "'USD'::text"
+  },
+  {
+    "column_name": "applied_date",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "column_name": "apply_time",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "source",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "status",
+    "data_type": "USER-DEFINED",
+    "is_nullable": "YES",
+    "column_default": "'applied'::application_status"
+  },
+  {
+    "column_name": "company_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "job_description",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "notes",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "column_name": "application_type",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": "'standard'::text"
+  }
+]
 
 
-VIEWS
+Table strucutre of profiles [
+  {
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "column_name": "full_name",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "title",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "phone",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "location",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "bio",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "education",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "column_default": "ARRAY[]::jsonb[]"
+  },
+  {
+    "column_name": "experience",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "column_default": "ARRAY[]::jsonb[]"
+  },
+  {
+    "column_name": "projects",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "column_default": "ARRAY[]::jsonb[]"
+  },
+  {
+    "column_name": "skills",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "column_default": "ARRAY[]::text[]"
+  },
+  {
+    "column_name": "languages",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "column_default": "ARRAY[]::text[]"
+  },
+  {
+    "column_name": "socials",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "column_default": "'{}'::jsonb"
+  },
+  {
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "column_name": "resume_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "avatar_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "column_name": "daily_goal",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "column_default": "10"
+  }
+]
 
-| view_name           | view_definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| recent_applications |  SELECT applications.id,
-    applications.user_id,
-    applications."position",
-    applications.company,
-    applications.location,
-    applications.work_type,
-    applications.salary_min,
-    applications.salary_max,
-    applications.salary_currency,
-    applications.applied_date,
-    applications.apply_time,
-    applications.source,
-    applications.status
-   FROM applications
-  WHERE (applications.applied_date >= (now() - '30 days'::interval))
-  ORDER BY applications.applied_date DESC; |
-
-
-  FUNCTIONSSS
-
-  | function_name            | function_definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| get_application_stats    | CREATE OR REPLACE FUNCTION public.get_application_stats(user_id uuid, OUT total_applications bigint, OUT applications_this_week bigint, OUT applications_today bigint, OUT average_apply_time numeric, OUT response_rate numeric)
- RETURNS record
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-    -- Initialize with default values
-    total_applications := 0;
-    applications_this_week := 0;
-    applications_today := 0;
-    average_apply_time := 0;
-    response_rate := 0;
-
-    -- Calculate total applications
-    SELECT COUNT(*)
-    INTO total_applications
-    FROM applications
-    WHERE applications.user_id = $1;
-
-    -- Only continue if there are applications
-    IF total_applications > 0 THEN
-        -- Calculate applications this week
-        SELECT COUNT(*)
-        INTO applications_this_week
-        FROM applications
-        WHERE applications.user_id = $1
-        AND applied_date >= NOW() - INTERVAL '7 days';
-
-        -- Calculate applications today
-        SELECT COUNT(*)
-        INTO applications_today
-        FROM applications
-        WHERE applications.user_id = $1
-        AND DATE(applied_date) = CURRENT_DATE;
-
-        -- Calculate average apply time
-        SELECT COALESCE(AVG(NULLIF(apply_time, 0)), 0)
-        INTO average_apply_time
-        FROM applications
-        WHERE applications.user_id = $1;
-
-        -- Calculate response rate (percentage of applications with status other than 'applied')
-        SELECT COALESCE(
-            (COUNT(*) FILTER (WHERE status != 'applied') * 100.0 / NULLIF(COUNT(*), 0)),
-            0
-        )
-        INTO response_rate
-        FROM applications
-        WHERE applications.user_id = $1;
-    END IF;
-END;
-$function$
- |
-| generate_extension_token | CREATE OR REPLACE FUNCTION public.generate_extension_token()
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-    new_token UUID;
-BEGIN
-    new_token := uuid_generate_v4();
-    
-    UPDATE profiles
-    SET extension_access_token = new_token,
-        extension_status = true,
-        extension_last_used = NOW()
-    WHERE id = auth.uid();
-    
-    RETURN new_token;
-END;
-$function$ |                                                                                                                                                                                                                                                                                                                                                                  
-Indexes 
-
-| tablename          | indexname               | indexdef                                                                                  |
-| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------- |
-| profiles           | profiles_pkey           | CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)                     |
-| applications       | applications_pkey       | CREATE UNIQUE INDEX applications_pkey ON public.applications USING btree (id)             |
-| extension_activity | extension_activity_pkey | CREATE UNIQUE INDEX extension_activity_pkey ON public.extension_activity USING btree (id) |
-
-All foreign key 
-
-SELECT
-    tc.table_schema, 
-    tc.constraint_name, 
-    tc.table_name, 
-    kcu.column_name, 
-    ccu.table_schema AS foreign_table_schema,
-    ccu.table_name AS foreign_table_name,
-    ccu.column_name AS foreign_column_name 
-FROM 
-    information_schema.table_constraints AS tc 
-    JOIN information_schema.key_column_usage AS kcu
-      ON tc.constraint_name = kcu.constraint_name
-      AND tc.table_schema = kcu.table_schema
-    JOIN information_schema.constraint_column_usage AS ccu
-      ON ccu.constraint_name = tc.constraint_name
-      AND ccu.table_schema = tc.table_schema
-WHERE 
-    tc.constraint_type = 'FOREIGN KEY' 
-    AND tc.table_schema = 'public';
-
-
-RLS Policcies 
-| schemaname | tablename          | policyname                                    | permissive | roles    | cmd    | qual                   | with_check             |
-| ---------- | ------------------ | --------------------------------------------- | ---------- | -------- | ------ | ---------------------- | ---------------------- |
-| public     | extension_activity | Users can insert their own extension activity | PERMISSIVE | {public} | INSERT | null                   | (auth.uid() = user_id) |
-| public     | extension_activity | Users can view their own extension activity   | PERMISSIVE | {public} | SELECT | (auth.uid() = user_id) | null                   |
-
-ENUMS
-| enum_name          | enum_value |
-| ------------------ | ---------- |
-| application_status | applied    |
-| application_status | screening  |
-| application_status | interview  |
-| application_status | offer      |
-| application_status | rejected   |
-| application_status | withdrawn  |
-| work_type          | remote     |
-| work_type          | hybrid     |
-| work_type          | onsite     |
-
-TABLE SIZE 
-| table_name         | total_size | data_size  | external_size |
-| ------------------ | ---------- | ---------- | ------------- |
-| profiles           | 32 kB      | 8192 bytes | 24 kB         |
-| applications       | 16 kB      | 0 bytes    | 16 kB         |
-| extension_activity | 16 kB      | 0 bytes    | 16 kB         |

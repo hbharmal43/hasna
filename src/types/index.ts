@@ -14,19 +14,38 @@ export interface ResponseType {
 }
 
 export interface UserProfile {
-  firstName: string;
-  lastName: string;
-  email: string;
+  id?: string;
+  full_name: string;
+  title: string;
   phone: string;
   location: string;
-  experience: any[];
-  education: any[];
+  bio: string;
+  education: Array<{
+    degree: string;
+    school: string;
+    date: string;
+    description?: string;
+  }>;
+  experience: Array<{
+    id?: string;
+    title: string;
+    company: string;
+    location: string;
+    date: string;
+    description: string;
+  }>;
+  projects: Array<{
+    name: string;
+    date: string;
+    description: string;
+  }>;
   skills: string[];
-  resume: string;
-  additionalQuestions: Record<string, string>;
-  linkedin?: string;
-  website?: string;
-  settings: {
+  languages: string[];
+  socials: Record<string, string>;
+  resume_url?: string;
+  avatar_url?: string;
+  daily_goal: number;
+  settings?: {
     nextJobDelay: number;
   };
 }

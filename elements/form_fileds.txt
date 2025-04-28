@@ -1,0 +1,54 @@
+1) Single line form fields which require only number in input
+        <div data-test-single-line-text-form-component="" data-live-test-single-line-text-form-component="">
+  <div id="ember4756" class="artdeco-text-input artdeco-text-input--type-text artdeco-text-input--color-default artdeco-text-input--state-required ember-view">  <div id="ember4757" class="artdeco-text-input--container ember-view">  <label for="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683780970-numeric" class="artdeco-text-input--label">How many years of work experience do you have with Angular?</label>
+  <input class=" artdeco-text-input--input" id="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683780970-numeric" required="" aria-describedby="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683780970-numeric-error" dir="auto" type="text">
+</div>
+<!----><!----></div>
+
+  <div id="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683780970-numeric-error">
+<!----></div>
+</div>
+
+
+2) Choice form filed where user has to select yes/no
+<fieldset data-test-form-builder-radio-button-form-component="true" id="radio-button-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683781002-multipleChoice" aria-describedby="radio-button-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4190660059-15683781002-multipleChoice-error">
+    <legend>
+      <span data-test-form-builder-radio-button-form-component__title="" class="fb-dash-form-element__label
+          fb-dash-form-element__label-title--is-required">
+        <span aria-hidden="true"><!---->Are you comfortable commuting to this job's location?<!----></span><span class="visually-hidden"><!---->Are you comfortable commuting to this job's location?<!----></span>
+      </span>
+
+        <span class="visually-hidden" data-test-form-builder-radio-button-form-component__required="">
+          Required
+        </span>
+    </legend>
+
+      <div data-test-text-selectable-option="0" class="wWOLaspRUIhWYsKXHIXbmdQXpsqPsJwI
+    display-flex">
+  <input data-test-text-selectable-option__input="Yes" id="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)-0" class="fb-form-element__checkbox" name="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)" aria-required="true" type="radio" value="Yes">
+  <label data-test-text-selectable-option__label="Yes" for="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)-0" class="t-14">
+    <!---->Yes<!---->
+  </label>
+</div>
+      <div data-test-text-selectable-option="1" class="wWOLaspRUIhWYsKXHIXbmdQXpsqPsJwI
+    display-flex">
+  <input data-test-text-selectable-option__input="No" id="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)-1" class="fb-form-element__checkbox" name="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)" aria-required="true" type="radio" value="No">
+  <label data-test-text-selectable-option__label="No" for="urn:li:fsd_formElement:urn:li:jobs_applyformcommon_easyApplyFormElement:(4190660059,15683781002,multipleChoice)-1" class="t-14">
+    <!---->No<!---->
+  </label>
+</div>
+</fieldset>
+
+
+3) Data form where user has to type long text :
+
+
+<div data-test-single-line-text-form-component="" data-live-test-single-line-text-form-component="">
+  <div id="ember5176" class="artdeco-text-input artdeco-text-input--type-text artdeco-text-input--color-default artdeco-text-input--state-required ember-view">  <div id="ember5177" class="artdeco-text-input--container ember-view">  <label for="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4184880855-15285555602-text" class="artdeco-text-input--label">First name</label>
+  <input class=" artdeco-text-input--input" id="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4184880855-15285555602-text" required="" aria-describedby="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4184880855-15285555602-text-error" dir="auto" type="text">
+</div>
+<!----><!----></div>
+
+  <div id="single-line-text-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4184880855-15285555602-text-error">
+<!----></div>
+</div>

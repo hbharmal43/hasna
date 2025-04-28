@@ -9652,118 +9652,42 @@ const handleSaveApplicationPopup = async () => {
 // Function to click on the next page number button
 const clickNextPageNumber = async () => {
     try {
-        // Look for pagination container from screenshot
-        const paginationContainer = document.querySelector('.jobs-search-pagination');
-        if (!paginationContainer) {
-            console.log("Could not find pagination container");
-        }
-        else {
-            console.log("Found pagination container");
-        }
-        // Method 1: Try to find the current active page
+        console.log("Looking for numeric page buttons (1, 2, 3, etc.)");
+        // Find the active page button
         const activePageButton = document.querySelector('button[aria-current="page"]');
+        let currentPage = 1;
         if (activePageButton) {
-            // Get the current page number
-            const currentPageSpan = activePageButton.querySelector('span');
-            if (currentPageSpan) {
-                // Parse the current page number and calculate the next page number
-                const currentPage = parseInt(currentPageSpan.textContent || "1", 10);
-                const nextPage = currentPage + 1;
-                console.log(`Current page: ${currentPage}, looking for page ${nextPage} button`);
-                // Find all page buttons
-                const pageButtons = document.querySelectorAll('button[aria-label^="Page"]');
-                // Look for the button with the next page number
-                for (const button of pageButtons) {
-                    const span = button.querySelector('span');
-                    if (span && span.textContent?.trim() === String(nextPage)) {
-                        console.log(`Found page ${nextPage} button, clicking...`);
-                        button.click();
-                        return true;
-                    }
-                }
-                // Alternative approach: look for specific button with aria-label="Page X"
-                const nextPageButton = document.querySelector(`button[aria-label="Page ${nextPage}"]`);
-                if (nextPageButton && isElementVisible(nextPageButton)) {
-                    console.log(`Found page ${nextPage} button by aria-label, clicking...`);
-                    nextPageButton.click();
-                    return true;
-                }
+            const span = activePageButton.querySelector('span');
+            if (span && span.textContent) {
+                currentPage = parseInt(span.textContent.trim(), 10) || 1;
             }
         }
-        // Method 2: Direct approach - try to find any numbered page buttons
-        const pageNumbers = document.querySelectorAll('.jobs-search-pagination__indicator-button, li.jobs-search-pagination__indicator button');
-        const pageNumbersArray = Array.from(pageNumbers);
-        console.log(`Found ${pageNumbersArray.length} page number buttons`);
-        // Find active page
-        let activePageIndex = -1;
-        let nextPageElement = null;
-        // Try to find the active page by checking aria-current or CSS classes
-        for (let i = 0; i < pageNumbersArray.length; i++) {
-            const button = pageNumbersArray[i];
-            // Check if this is the active page 
-            if (button.getAttribute('aria-current') === 'page' ||
-                button.classList.contains('active') ||
-                button.classList.contains('jobs-search-pagination__indicator-button--active') ||
-                button.classList.contains('jobs-search-pagination__indicator-button--selected')) {
-                activePageIndex = i;
-                break;
-            }
-            // Also check parent li if button is inside a list item
-            const parentLi = button.closest('li');
-            if (parentLi && (parentLi.classList.contains('active') ||
-                parentLi.classList.contains('jobs-search-pagination__indicator--active') ||
-                parentLi.classList.contains('selected'))) {
-                activePageIndex = i;
-                break;
-            }
-        }
-        // If we found the active page, click the next one
-        if (activePageIndex !== -1 && activePageIndex < pageNumbersArray.length - 1) {
-            nextPageElement = pageNumbersArray[activePageIndex + 1];
-            console.log(`Found next page element at index ${activePageIndex + 1}`);
-            nextPageElement.click();
-            return true;
-        }
-        // Method 3: From screenshot - try to find numbered pagination buttons (1, 2, 3, ...)
-        // Look through all buttons with spans containing just numbers
+        console.log(`Current page appears to be: ${currentPage}`);
+        const nextPage = currentPage + 1;
+        // Look for buttons with spans containing just numbers - this works best with the UI in screenshot
         const allButtons = document.querySelectorAll('button');
+        // First try to find the exact next page number
+        for (const button of allButtons) {
+            const span = button.querySelector('span');
+            if (span && span.textContent?.trim() === String(nextPage)) {
+                console.log(`Found exact next page button (${nextPage}), clicking...`);
+                button.click();
+                return true;
+            }
+        }
+        // If we couldn't find the exact next page, try any higher page number
         for (const button of allButtons) {
             const span = button.querySelector('span');
             if (span && /^\d+$/.test(span.textContent?.trim() || '')) {
                 const pageNum = parseInt(span.textContent?.trim() || '0', 10);
-                console.log(`Found numeric page button: ${pageNum}`);
-                // Check if this might be the next page
-                const isCurrentPage = button.getAttribute('aria-current') === 'page' ||
-                    button.classList.contains('jobs-search-pagination__indicator-button--active');
-                if (!isCurrentPage && pageNum > 1) {
-                    console.log(`Clicking numeric page button: ${pageNum}`);
+                if (pageNum > currentPage) {
+                    console.log(`Found higher page button (${pageNum}), clicking...`);
                     button.click();
                     return true;
                 }
             }
         }
-        // Method 4: Last resort - find any "Next" or pagination arrow button
-        const nextButtons = [
-            document.querySelector('button[aria-label="Next"]'),
-            document.querySelector('button.artdeco-pagination__button--next'),
-            document.querySelector('.jobs-search-pagination__button--next'),
-            document.querySelector('button[aria-label="Next page"]'),
-            // Try to find by child SVG 
-            document.querySelector('button svg[data-test-icon="chevron-right-small"]')?.closest('button'),
-            // Try to find by class or ID containing "next"
-            document.querySelector('button[id*="next" i]'),
-            document.querySelector('button[class*="next" i]'),
-            // From your screenshot - the ember button
-            document.querySelector('button#ember289, button[id^="ember"][id$="next"]')
-        ];
-        for (const button of nextButtons) {
-            if (button && isElementVisible(button)) {
-                console.log("Found next button by alternative selector, clicking...");
-                button.click();
-                return true;
-            }
-        }
-        console.log("Could not find any page navigation buttons");
+        console.log("Could not find any numeric page buttons to click");
         return false;
     }
     catch (error) {

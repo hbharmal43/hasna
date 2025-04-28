@@ -50,6 +50,35 @@ export interface UserProfile {
   };
 }
 
+export interface JobApplication {
+  job_id: string;
+  title: string;
+  company: string;
+  location?: string;
+  work_type?: 'onsite' | 'remote' | 'hybrid';
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency?: string;
+  apply_time?: number;
+  company_url?: string;
+  job_description?: string;
+  notes?: string;
+  linkedin_job_id?: string;
+}
+
+export type TrackJobApplicationFn = (jobId: string, title: string, company: string, additionalData?: {
+  location?: string;
+  work_type?: 'onsite' | 'remote' | 'hybrid';
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency?: string;
+  apply_time?: number;
+  company_url?: string;
+  job_description?: string;
+  notes?: string;
+  linkedin_job_id?: string;
+}) => Promise<boolean>;
+
 export type WorkExperience = {
   title: string;
   company: string;
@@ -115,7 +144,7 @@ export const SELECTORS: Selectors = {
   CLOSE_BUTTON: '[aria-label="Dismiss"]',
   JOB_CARD: '.job-card-container, .jobs-search-results__list-item',
   JOB_TITLE_LINK: '.job-card-container__link',
-  JOBS_LIST: '.jobs-search-results-list',
+  JOBS_LIST: '.jobs-search-results-list, .jobs-search-results__list, div.GDWMPYlbLvJwwJkvOFRdwOcJxcoOxMsCHeyMgIQ, div[class*="GDWMP"], .jobs-search-two-pane__results',
   NEXT_PAGE_BUTTON: 'button[aria-label="Next"]',
   // Form field selectors
   FIRST_NAME_INPUT: 'input[name*="first" i]',

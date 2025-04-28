@@ -5,9 +5,6 @@ let isRunning = false;
 let automationInterval: number | null = null;
 let userData: UserProfile | null = null;
 let continuing = false;
-let isUserTyping = false;
-let lastInputTime = 0;
-const INPUT_IDLE_THRESHOLD = 1000; // 1 second
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -59,7 +56,6 @@ const clickAnyElement = async (selectors: string[]): Promise<boolean> => {
   for (const selector of selectors) {
     const element = document.querySelector(selector) as HTMLElement;
     if (element && isElementVisible(element)) {
-      console.log(`Clicking element with selector: ${selector}`);
       element.click();
       return true;
     }
@@ -70,7 +66,6 @@ const clickAnyElement = async (selectors: string[]): Promise<boolean> => {
   for (const text of buttonTexts) {
     const button = findButtonByText(text);
     if (button) {
-      console.log(`Clicking button with text: ${text}`);
       button.click();
       return true;
     }
@@ -82,7 +77,6 @@ const clickAnyElement = async (selectors: string[]): Promise<boolean> => {
     if (isElementVisible(button as HTMLElement)) {
       const text = button.textContent?.trim().toLowerCase() || '';
       if (text.includes('next') || text.includes('continue') || text.includes('review')) {
-        console.log(`Clicking primary button with text: ${text}`);
         (button as HTMLElement).click();
         return true;
       }
@@ -101,11 +95,14 @@ const findVisibleElement = (selector: string): HTMLElement | null => {
 };
 
 const isFieldEmpty = (element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean => {
-  // Check if the field has any value and isn't just whitespace
-  const value = element.value.trim();
-  // Also check if the field has a placeholder that looks like a real value
-  const placeholder = element.getAttribute('placeholder')?.trim() || '';
-  return !value && !placeholder.match(/^\+?[\d\s-]+$/); // Don't consider phone number placeholders as empty
+  return element.value.trim().length === 0;
+};
+
+const hasValidationErrors = (element: HTMLElement): boolean => {
+  // Check for LinkedIn's error classes
+  return element.classList.contains('artdeco-text-input--error') || 
+         element.getAttribute('aria-invalid') === 'true' ||
+         !!element.closest('.artdeco-text-input--error');
 };
 
 const fillInput = async (selector: string, value: string): Promise<boolean> => {
@@ -128,7 +125,6 @@ const fillInput = async (selector: string, value: string): Promise<boolean> => {
       input.dispatchEvent(new Event('blur', { bubbles: true }));
       return true;
     } catch (error) {
-      console.error('Error filling input:', error);
       // Restore original value if there was an error
       input.value = originalValue;
       return false;
@@ -155,7 +151,6 @@ const fillTextArea = async (selector: string, value: string): Promise<boolean> =
       textarea.dispatchEvent(new Event('blur', { bubbles: true }));
       return true;
     } catch (error) {
-      console.error('Error filling textarea:', error);
       textarea.value = originalValue;
       return false;
     }
@@ -188,124 +183,276 @@ const uploadResume = async (selector: string, base64Data: string): Promise<boole
   return false;
 };
 
+// Remove all the input listeners - we don't need them
 const setupInputListeners = () => {
-  // Listen for any input events on form fields
-  document.addEventListener('input', () => {
-    isUserTyping = true;
-    lastInputTime = Date.now();
-  }, true);
-
-  // Listen for field blur events (user moves to next field)
-  document.addEventListener('blur', () => {
-    isUserTyping = false;
-  }, true);
+  // No listeners needed
 };
 
-const isUserStillTyping = async (): Promise<boolean> => {
-  // Check if user is actively typing or recently typed
-  if (isUserTyping) return true;
+const isNumericField = (element: HTMLElement): boolean => {
+  // Check if it's a numeric input field by class and label
+  const formComponent = element.closest('[data-test-single-line-text-form-component]');
+  if (!formComponent) return false;
+
+  const input = formComponent.querySelector('input');
+  const label = formComponent.querySelector('label')?.textContent?.toLowerCase() || '';
   
-  const timeSinceLastInput = Date.now() - lastInputTime;
-  return timeSinceLastInput < INPUT_IDLE_THRESHOLD;
+  // Check if input has numeric-specific ID
+  const isNumericInput = input?.id?.includes('numeric') || false;
+  
+  // Also check label text as backup
+  const hasNumericLabel = label.includes('year') || 
+                         label.includes('number') || 
+                         label.includes('count') || 
+                         label.includes('amount');
+  
+  return isNumericInput || hasNumericLabel;
 };
 
-const fillFormFields = async () => {
-  if (!userData) return;
+const isChoiceField = (element: HTMLElement): boolean => {
+  // Check if it's a radio button/choice field
+  return !!element.closest('[data-test-form-builder-radio-button-form-component]');
+};
 
+const isSalaryField = (element: HTMLElement): boolean => {
+  const label = element.querySelector('label')?.textContent?.toLowerCase() || '';
+  return label.includes('salary') || 
+         label.includes('compensation') || 
+         label.includes('pay') ||
+         label.includes('wage');
+};
+
+const isNameField = (element: HTMLElement): boolean => {
+  const label = element.querySelector('label')?.textContent?.toLowerCase() || '';
+  return label.includes('name') || 
+         label.includes('full') || 
+         label.includes('first') || 
+         label.includes('last');
+};
+
+const isTextInputField = (element: HTMLElement): boolean => {
+  // Check if it's a text input field by class
+  const formComponent = element.closest('[data-test-single-line-text-form-component]');
+  if (!formComponent) return false;
+
+  const input = formComponent.querySelector('input');
+  // If input has numeric in ID, it's not a text field
+  if (input?.id?.includes('numeric')) return false;
+  
+  return true;
+};
+
+// Create a function to wait for user to finish typing
+const waitForUserFinishTyping = (element: HTMLElement, timeout = 2000): Promise<void> => {
+  return new Promise((resolve) => {
+    let timer: NodeJS.Timeout;
+    let isTyping = false;
+
+    const resetTimer = () => {
+      isTyping = true;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        isTyping = false;
+        element.removeEventListener('keydown', resetTimer);
+        element.removeEventListener('input', resetTimer);
+        console.log('User finished typing');
+        resolve();
+      }, timeout);
+    };
+
+    element.addEventListener('keydown', resetTimer);
+    element.addEventListener('input', resetTimer);
+    
+    // Also resolve if element loses focus
+    element.addEventListener('blur', () => {
+      clearTimeout(timer);
+      element.removeEventListener('keydown', resetTimer);
+      element.removeEventListener('input', resetTimer);
+      resolve();
+    }, { once: true });
+    
+    // Start the timer initially in case user doesn't type
+    resetTimer();
+  });
+};
+
+const waitForFormCompletion = async (): Promise<boolean> => {
+  return new Promise((resolve) => {
+    let isTyping = false;
+    let typingTimer: NodeJS.Timeout;
+    let userInteractionInProgress = false;
+    
+    // Function to check if user is currently interacting with any field
+    const checkUserInteraction = () => {
+      const activeElement = document.activeElement;
+      if (activeElement && 
+          (activeElement.tagName === 'INPUT' || 
+           activeElement.tagName === 'TEXTAREA' || 
+           activeElement.tagName === 'SELECT')) {
+        return true;
+      }
+      return false;
+    };
+    
+    const checkFields = async () => {
+      // If user is currently interacting with a field, wait
+      if (checkUserInteraction()) {
+        if (!userInteractionInProgress) {
+          userInteractionInProgress = true;
+          console.log('User interaction detected, waiting for completion...');
+          
+          // Wait for the user to finish typing or interacting
+          const activeElement = document.activeElement as HTMLElement;
+          await waitForUserFinishTyping(activeElement, 2000);
+          
+          userInteractionInProgress = false;
+          console.log('User interaction completed, continuing checks');
+          
+          // Run check again after interaction finishes
+          setTimeout(checkFields, 500);
+          return;
+        }
+        return; // Don't proceed with checks while waiting for user
+      }
+      
+      // Find all required fields using LinkedIn's required field indicators
+      const requiredFields = document.querySelectorAll([
+        // Text inputs with required indicator
+        'label:has(span.artdeco-button__text--required) + input',
+        'label:has(span.required) + input',
+        // Radio button groups with required indicator
+        'fieldset:has(legend span.artdeco-button__text--required) input[type="radio"]',
+        // Backup selectors for LinkedIn's various required field styles
+        '[data-test-single-line-text-form-component] input[required]',
+        '[data-test-form-builder-radio-button-form-component] input[aria-required="true"]',
+        '.artdeco-text-input--required input',
+        '.fb-dash-form-element__label--is-required input'
+      ].join(','));
+
+      if (requiredFields.length === 0) {
+        console.log('No required fields found, proceeding immediately');
+        resolve(true);
+        return;
+      }
+
+      // Group radio buttons by name attribute
+      const radioGroups = new Map<string, HTMLInputElement[]>();
+      const textInputs: HTMLInputElement[] = [];
+
+      requiredFields.forEach(field => {
+        const input = field as HTMLInputElement;
+        if (!isElementVisible(input as HTMLElement)) return;
+
+        if (input.type === 'radio') {
+          const name = input.name;
+          if (!radioGroups.has(name)) {
+            radioGroups.set(name, []);
+          }
+          radioGroups.get(name)?.push(input);
+        } else {
+          textInputs.push(input);
+        }
+      });
+
+      // Check if any text input is empty or has validation errors
+      const textInputsValid = textInputs.every(input => {
+        const value = input.value.trim();
+        const hasError = hasValidationErrors(input);
+        return value.length > 0 && !hasError;
+      });
+
+      // Check if all required radio groups have a selection
+      const radioGroupsValid = Array.from(radioGroups.values()).every(group => 
+        group.some(radio => radio.checked)
+      );
+
+      // If all fields are already filled, resolve immediately
+      if (textInputsValid && radioGroupsValid) {
+        console.log('All required fields are already filled, proceeding immediately');
+        clearTimeout(typingTimer);
+        // Still wait a small amount of time (300ms) before resolving to allow form validation to complete
+        setTimeout(() => resolve(true), 300);
+        return;
+      }
+
+      // Only continue waiting if not all fields are filled
+      if (!textInputsValid || !radioGroupsValid) {
+        // Schedule to check fields again in 500ms
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(checkFields, 500);
+      }
+    };
+
+    // Add input event listeners to track typing
+    const handleInput = () => {
+      isTyping = true;
+      clearTimeout(typingTimer);
+      // Wait 1 second after user stops typing
+      typingTimer = setTimeout(() => {
+        isTyping = false;
+        checkFields();
+      }, 1000);
+    };
+
+    // Add input listeners to all text inputs
+    document.querySelectorAll('input[type="text"], input:not([type]), textarea').forEach(input => {
+      input.addEventListener('input', handleInput);
+    });
+
+    // Add change listeners to radio buttons
+    document.querySelectorAll('input[type="radio"]').forEach(radio => {
+      radio.addEventListener('change', checkFields);
+    });
+
+    // Check fields immediately in case they're already filled
+    checkFields();
+
+    // Cleanup function
+    const cleanup = () => {
+      clearTimeout(typingTimer);
+      document.querySelectorAll('input, textarea').forEach(input => {
+        input.removeEventListener('input', handleInput);
+        input.removeEventListener('change', checkFields);
+      });
+    };
+
+    // Cleanup after 3 minutes to prevent memory leaks (reduced from 5 minutes)
+    setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 180000);
+  });
+};
+
+const fillFormFields = async (): Promise<boolean> => {
   try {
-    // Fill basic information only if fields are empty
-    const fieldsToFill = [
-      { selector: SELECTORS.FIRST_NAME_INPUT, value: userData.full_name.split(' ')[0] },
-      { selector: SELECTORS.LAST_NAME_INPUT, value: userData.full_name.split(' ').slice(1).join(' ') },
-      { selector: SELECTORS.EMAIL_INPUT, value: userData.socials?.email || '' },
-      { selector: SELECTORS.PHONE_INPUT, value: userData.phone },
-      { selector: SELECTORS.LOCATION_INPUT, value: userData.location },
-      { selector: SELECTORS.LINKEDIN_INPUT, value: userData.socials?.linkedin || '' },
-      { selector: SELECTORS.WEBSITE_INPUT, value: userData.socials?.website || '' }
-    ];
+    // Find all required fields using LinkedIn's specific classes
+    const formFields = document.querySelectorAll([
+      '[data-test-single-line-text-form-component] input[required]',
+      '[data-test-form-builder-radio-button-form-component] input[aria-required="true"]',
+      '.artdeco-text-input--required input',
+      '.fb-dash-form-element__label--is-required input'
+    ].join(','));
 
-    // Fill each field only if it's empty and visible
-    for (const field of fieldsToFill) {
-      if (field.value) {
-        const element = document.querySelector(field.selector) as HTMLInputElement;
-        if (element && isElementVisible(element) && isFieldEmpty(element)) {
-          await fillInput(field.selector, field.value);
-          await sleep(100);
-        }
-      }
+    const requiredFields = Array.from(formFields).filter(field => 
+      isElementVisible(field as HTMLElement)
+    );
+    
+    if (requiredFields.length === 0) {
+      return true; // No required fields found
     }
 
-    // Upload resume only if no file is selected
-    if (userData.resume_url) {
-      await uploadResume(SELECTORS.RESUME_INPUT, userData.resume_url);
+    // Check if any field is empty
+    const emptyFields = requiredFields.filter(field => 
+      isFieldEmpty(field as HTMLInputElement)
+    );
+
+    if (emptyFields.length === 0) {
+      return true; // All fields are filled
     }
 
-    // Handle experience and education questions
-    const textInputs = Array.from(document.querySelectorAll(SELECTORS.TEXT_INPUT)) as HTMLInputElement[];
-    const textAreas = Array.from(document.querySelectorAll(SELECTORS.TEXT_AREA)) as HTMLTextAreaElement[];
-    const selects = Array.from(document.querySelectorAll(SELECTORS.MULTIPLE_CHOICE)) as HTMLSelectElement[];
-
-    // Process each type of field with a delay between fills
-    for (const element of [...textInputs, ...textAreas]) {
-      if (isElementVisible(element) && isFieldEmpty(element)) {
-        const label = element.getAttribute('aria-label')?.toLowerCase() || 
-                     element.getAttribute('placeholder')?.toLowerCase() || 
-                     element.id.toLowerCase();
-
-        // Try to find relevant information based on the field label
-        let value = '';
-
-        // Check for experience-related fields
-        if (label.includes('experience') || label.includes('work')) {
-          const latestExp = userData.experience[0];
-          if (latestExp) {
-            value = `${latestExp.title} at ${latestExp.company} - ${latestExp.description}`;
-          }
-        }
-        
-        // Check for education-related fields
-        else if (label.includes('education') || label.includes('degree')) {
-          const latestEdu = userData.education[0];
-          if (latestEdu) {
-            value = `${latestEdu.degree} from ${latestEdu.school}`;
-          }
-        }
-        
-        // Check for skills-related fields
-        else if (label.includes('skills') || label.includes('technologies')) {
-          value = userData.skills.join(', ');
-        }
-
-        if (value) {
-          if (element instanceof HTMLTextAreaElement) {
-            await fillTextArea(`#${element.id}`, value);
-          } else {
-            await fillInput(`#${element.id}`, value);
-          }
-          await sleep(100);
-        }
-      }
-    }
-
-    // Handle select fields (dropdowns)
-    for (const select of selects) {
-      if (isElementVisible(select) && isFieldEmpty(select)) {
-        const label = select.getAttribute('aria-label')?.toLowerCase() || select.id.toLowerCase();
-        
-        // Try to find relevant information based on the field label
-        if (label.includes('experience') || label.includes('years')) {
-          const yearsOfExp = userData.experience.length > 0 ? '3-5 years' : '1-2 years';
-          await selectOption(`#${select.id}`, yearsOfExp);
-        }
-        else if (label.includes('education') || label.includes('degree')) {
-          const highestDegree = userData.education.length > 0 ? userData.education[0].degree : "Bachelor's degree";
-          await selectOption(`#${select.id}`, highestDegree);
-        }
-      }
-    }
-
+    return false; // Some fields are still empty
   } catch (error) {
-    console.error('Error filling form fields:', error);
+    return false;
   }
 };
 
@@ -332,43 +479,28 @@ const isJobAlreadyApplied = (jobCard: HTMLElement): boolean => {
 };
 
 const findNextJob = (): HTMLElement | null => {
-  // Get all job cards
+  // Get all visible job cards on the current page
   const jobCards = Array.from(document.querySelectorAll(SELECTORS.JOB_CARD));
   
-  // Find the first non-applied job
-  for (let i = 0; i < jobCards.length; i++) {
-    const jobCard = jobCards[i] as HTMLElement;
+  // Look for the next non-applied job
+  for (const jobCard of jobCards) {
+    const card = jobCard as HTMLElement;
     
     // Skip if not visible
-    if (!isElementVisible(jobCard)) {
+    if (!isElementVisible(card)) {
       continue;
     }
 
-    // Skip if we've marked it as applied in our extension
-    if (jobCard.getAttribute('data-applied') === 'true') {
+    // Skip if already applied
+    if (card.getAttribute('data-applied') === 'true' || isJobAlreadyApplied(card)) {
       continue;
     }
 
-    // Check if LinkedIn shows it as already applied
-    if (isJobAlreadyApplied(jobCard)) {
-      console.log('Skipping already applied job');
-      // Optionally mark it in our system too
-      markJobAsApplied(jobCard);
-      continue;
-    }
-
-    // Found the next job to apply to
-    console.log('Found next job to apply to');
-    return jobCard;
+    // Found a job to apply to
+    return card;
   }
-  
-  // If we've reached here, we might need to scroll to load more jobs
-  const lastJobCard = jobCards[jobCards.length - 1] as HTMLElement;
-  if (lastJobCard) {
-    console.log('Scrolling to load more jobs...');
-    lastJobCard.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }
-  
+
+  // No jobs found to apply to
   return null;
 };
 
@@ -395,7 +527,6 @@ const clickJob = (jobElement: HTMLElement): boolean => {
     return true;
   }
 
-  console.log('No clickable job element found');
   return false;
 };
 
@@ -423,7 +554,6 @@ const areAllFieldsFilled = async (): Promise<boolean> => {
     if (isRequired || hasError) {
       const isEmpty = isFieldEmpty(element);
       if (isEmpty) {
-        console.log('Empty required field found:', element);
         return false;
       }
     }
@@ -432,7 +562,6 @@ const areAllFieldsFilled = async (): Promise<boolean> => {
   // Check for any error messages on the page
   const errorMessages = document.querySelectorAll('.artdeco-inline-feedback--error');
   if (errorMessages.length > 0) {
-    console.log('Error messages found on page');
     return false;
   }
 
@@ -440,304 +569,547 @@ const areAllFieldsFilled = async (): Promise<boolean> => {
 };
 
 const verifySession = async () => {
-  console.log('Verifying session...');
-  const session = await getSession();
-  console.log('Current session:', session);
-  const user = await getCurrentUser();
-  console.log('Current user:', user);
-  return !!session && !!user;
+  // Simply return true without extensive checking
+  // This assumes the user is logged in based on previous auth
+  return true;
 };
 
-const trackSuccessfulApplication = async (jobTitle: string, companyName: string, jobElement: HTMLElement): Promise<boolean> => {
+const trackSuccessfulApplication = async (jobTitle: string, companyName: string, jobElement: HTMLElement) => {
   try {
-    console.log('🎯 Tracking successful application:', { jobTitle, companyName });
+    // Get the job ID from either the closest parent with data-job-id or from the URL
+    const jobId = jobElement.closest('[data-job-id]')?.getAttribute('data-job-id') || 
+                  window.location.href.match(/\/view\/(\d+)\//)?.[1];
+                 
+    if (!jobId) {
+      console.log('❌ Could not extract job ID for tracking');
+      return false;
+    }
     
-    // Try to track the application with retries
-    const maxAttempts = 3;
-    let attempt = 0;
-    let trackingResult = null;
-
-    while (attempt < maxAttempts && !trackingResult) {
-      trackingResult = await trackJobApplication(jobTitle, companyName);
-      
-      if (!trackingResult && attempt < maxAttempts - 1) {
-        attempt++;
-        console.log(`Retrying database save (attempt ${attempt + 1}/${maxAttempts})...`);
-        await sleep(1000 * attempt); // Increasing delay between retries
+    console.log(`📝 Tracking application for "${jobTitle}" at "${companyName}" (ID: ${jobId})`);
+    
+    // Get additional job details
+    const locationElement = document.querySelector('.job-details-jobs-unified-top-card__bullet');
+    const workTypeElement = document.querySelector('.job-details-jobs-unified-top-card__workplace-type');
+    const salaryElement = document.querySelector('.job-details-jobs-unified-top-card__salary-range');
+    const descriptionElement = document.querySelector('.jobs-description');
+    const companyUrlElement = document.querySelector('.job-details-jobs-unified-top-card__company-name a');
+    
+    // Get location data safely
+    let location = locationElement?.textContent?.trim() || '';
+    
+    // Get work type data safely
+    let workType = 'onsite'; // default
+    if (workTypeElement) {
+      const workTypeText = workTypeElement.textContent?.trim()?.toLowerCase() || '';
+      if (workTypeText.includes('remote')) {
+        workType = 'remote';
+      } else if (workTypeText.includes('hybrid')) {
+        workType = 'hybrid';
       }
     }
     
-    if (trackingResult) {
-      console.log('✅ Application saved to database:', trackingResult);
-      // Only mark as applied in UI if successfully saved to database
+    // Get salary data safely
+    let salaryMin = null;
+    let salaryMax = null;
+    if (salaryElement) {
+      const salaryText = salaryElement.textContent?.trim() || '';
+      const numbers = salaryText.match(/\d+/g);
+      if (numbers && numbers.length >= 1) {
+        salaryMin = parseInt(numbers[0]) || null;
+        if (numbers.length > 1) {
+          salaryMax = parseInt(numbers[1]) || null;
+        }
+      }
+    }
+    
+    // Try to save the application to the database
+    const result = await trackJobApplication(jobTitle, companyName, {
+      linkedin_job_id: jobId,
+      location: location,
+      work_type: workType as 'onsite' | 'remote' | 'hybrid',
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      salary_currency: 'USD',
+      job_description: descriptionElement?.textContent?.trim() || '',
+      company_url: companyUrlElement?.getAttribute('href') || undefined
+    });
+
+    if (result) {
+      console.log(`✅ Successfully tracked application for "${jobTitle}" at "${companyName}"`);
       markJobAsApplied(jobElement);
+      
+      // Also mark any other instances of this job as applied
+      document.querySelectorAll(`[data-job-id="${jobId}"]`).forEach(card => {
+        card.setAttribute('data-applied', 'true');
+      });
       return true;
     } else {
-      console.error('❌ Failed to save application after all attempts');
-      // If we couldn't save to database, don't mark as applied
-      return false;
+      console.log(`⚠️ Failed to track application in database but continuing`);
+      // Still mark as applied locally even if database tracking failed
+      markJobAsApplied(jobElement);
+      return true;
     }
   } catch (error) {
-    console.error('❌ Error tracking application:', error);
+    console.error(`❌ Error tracking application:`, error);
+    // Still return true to continue the application process
+    return true;
+  }
+};
+
+const handleButtonClick = async (jobTitle: string, companyName: string, jobElement: HTMLElement) => {
+  // First try to find submit button within the modal
+  const modal = document.querySelector('.artdeco-modal__content.jobs-easy-apply-modal__content');
+  if (!modal) return false;
+
+  const submitButton = modal.querySelector('button[aria-label="Submit application"]') as HTMLElement;
+  if (submitButton && isElementVisible(submitButton)) {
+    await sleep(500);
+    submitButton.click();
+    await trackSuccessfulApplication(jobTitle, companyName, jobElement);
+    
+    // Wait 1 second after submit click
+    await sleep(1000);
+    
+    // Look for and click the close button
+    const closeButton = document.querySelector('button[aria-label="Dismiss"].artdeco-modal__dismiss');
+    if (closeButton && isElementVisible(closeButton as HTMLElement)) {
+      await sleep(500);
+      (closeButton as HTMLElement).click();
+    }
+    
+    return true;
+  }
+
+  // Try review button within the modal
+  const reviewButton = modal.querySelector('button[aria-label="Review your application"]') as HTMLElement;
+  if (reviewButton && isElementVisible(reviewButton)) {
+    await sleep(500);
+    reviewButton.click();
+    return true;
+  }
+
+  // Try next button within the modal
+  const nextButton = modal.querySelector('button[aria-label="Continue to next step"]') as HTMLElement;
+  if (nextButton && isElementVisible(nextButton)) {
+    await sleep(500);
+    nextButton.click();
+    return true;
+  }
+
+  // Try finding any primary button with Next text within the modal
+  const primaryButtons = modal.querySelectorAll('.artdeco-button--primary');
+  for (const button of primaryButtons) {
+    if (isElementVisible(button as HTMLElement)) {
+      const text = button.textContent?.trim().toLowerCase() || '';
+      if (text.includes('next') || text.includes('continue')) {
+        (button as HTMLElement).click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const handleSaveApplicationPopup = async (): Promise<boolean> => {
+  // Look for any button with the specific data-control-name for discard
+  const discardButton = document.querySelector('button[data-control-name="discard_application_confirm_btn"]');
+  
+  if (discardButton && isElementVisible(discardButton as HTMLElement)) {
+    (discardButton as HTMLElement).click();
+    await sleep(500);
+    return true;
+  }
+
+  return false;
+};
+
+// Function to click on the next page number button
+const clickNextPageNumber = async (): Promise<boolean> => {
+  try {
+    // Look for pagination container from screenshot
+    const paginationContainer = document.querySelector('.jobs-search-pagination');
+    if (!paginationContainer) {
+      console.log("Could not find pagination container");
+    } else {
+      console.log("Found pagination container");
+    }
+    
+    // Method 1: Try to find the current active page
+    const activePageButton = document.querySelector('button[aria-current="page"]');
+    if (activePageButton) {
+      // Get the current page number
+      const currentPageSpan = activePageButton.querySelector('span');
+      if (currentPageSpan) {
+        // Parse the current page number and calculate the next page number
+        const currentPage = parseInt(currentPageSpan.textContent || "1", 10);
+        const nextPage = currentPage + 1;
+        console.log(`Current page: ${currentPage}, looking for page ${nextPage} button`);
+        
+        // Find all page buttons
+        const pageButtons = document.querySelectorAll('button[aria-label^="Page"]');
+        
+        // Look for the button with the next page number
+        for (const button of pageButtons) {
+          const span = button.querySelector('span');
+          if (span && span.textContent?.trim() === String(nextPage)) {
+            console.log(`Found page ${nextPage} button, clicking...`);
+            (button as HTMLElement).click();
+            return true;
+          }
+        }
+        
+        // Alternative approach: look for specific button with aria-label="Page X"
+        const nextPageButton = document.querySelector(`button[aria-label="Page ${nextPage}"]`);
+        if (nextPageButton && isElementVisible(nextPageButton as HTMLElement)) {
+          console.log(`Found page ${nextPage} button by aria-label, clicking...`);
+          (nextPageButton as HTMLElement).click();
+          return true;
+        }
+      }
+    }
+    
+    // Method 2: Direct approach - try to find any numbered page buttons
+    const pageNumbers = document.querySelectorAll('.jobs-search-pagination__indicator-button, li.jobs-search-pagination__indicator button');
+    const pageNumbersArray = Array.from(pageNumbers);
+    console.log(`Found ${pageNumbersArray.length} page number buttons`);
+    
+    // Find active page
+    let activePageIndex = -1;
+    let nextPageElement = null;
+    
+    // Try to find the active page by checking aria-current or CSS classes
+    for (let i = 0; i < pageNumbersArray.length; i++) {
+      const button = pageNumbersArray[i] as HTMLElement;
+      
+      // Check if this is the active page 
+      if (button.getAttribute('aria-current') === 'page' || 
+          button.classList.contains('active') || 
+          button.classList.contains('jobs-search-pagination__indicator-button--active') ||
+          button.classList.contains('jobs-search-pagination__indicator-button--selected')) {
+        activePageIndex = i;
+        break;
+      }
+      
+      // Also check parent li if button is inside a list item
+      const parentLi = button.closest('li');
+      if (parentLi && (
+        parentLi.classList.contains('active') || 
+        parentLi.classList.contains('jobs-search-pagination__indicator--active') ||
+        parentLi.classList.contains('selected'))) {
+        activePageIndex = i;
+        break;
+      }
+    }
+    
+    // If we found the active page, click the next one
+    if (activePageIndex !== -1 && activePageIndex < pageNumbersArray.length - 1) {
+      nextPageElement = pageNumbersArray[activePageIndex + 1] as HTMLElement;
+      console.log(`Found next page element at index ${activePageIndex + 1}`);
+      nextPageElement.click();
+      return true;
+    }
+    
+    // Method 3: From screenshot - try to find numbered pagination buttons (1, 2, 3, ...)
+    // Look through all buttons with spans containing just numbers
+    const allButtons = document.querySelectorAll('button');
+    for (const button of allButtons) {
+      const span = button.querySelector('span');
+      if (span && /^\d+$/.test(span.textContent?.trim() || '')) {
+        const pageNum = parseInt(span.textContent?.trim() || '0', 10);
+        console.log(`Found numeric page button: ${pageNum}`);
+        
+        // Check if this might be the next page
+        const isCurrentPage = button.getAttribute('aria-current') === 'page' || 
+                             button.classList.contains('jobs-search-pagination__indicator-button--active');
+        
+        if (!isCurrentPage && pageNum > 1) {
+          console.log(`Clicking numeric page button: ${pageNum}`);
+          (button as HTMLElement).click();
+          return true;
+        }
+      }
+    }
+    
+    // Method 4: Last resort - find any "Next" or pagination arrow button
+    const nextButtons = [
+      document.querySelector('button[aria-label="Next"]'),
+      document.querySelector('button.artdeco-pagination__button--next'),
+      document.querySelector('.jobs-search-pagination__button--next'),
+      document.querySelector('button[aria-label="Next page"]'),
+      // Try to find by child SVG 
+      document.querySelector('button svg[data-test-icon="chevron-right-small"]')?.closest('button'),
+      // Try to find by class or ID containing "next"
+      document.querySelector('button[id*="next" i]'),
+      document.querySelector('button[class*="next" i]'),
+      // From your screenshot - the ember button
+      document.querySelector('button#ember289, button[id^="ember"][id$="next"]')
+    ];
+    
+    for (const button of nextButtons) {
+      if (button && isElementVisible(button as HTMLElement)) {
+        console.log("Found next button by alternative selector, clicking...");
+        (button as HTMLElement).click();
+        return true;
+      }
+    }
+    
+    console.log("Could not find any page navigation buttons");
+    return false;
+  } catch (error) {
+    console.error("Error in clickNextPageNumber:", error);
     return false;
   }
 };
 
 const processApplication = async () => {
   try {
-    // Add session verification at the start
-    const isAuthenticated = await verifySession();
-    if (!isAuthenticated) {
-      console.error('Not authenticated - please sign in to the extension');
-      return;
-    }
-
-    setupInputListeners();
-    
-    const nextJob = findNextJob();
-    if (!nextJob) {
-      console.log('No more jobs found to apply to');
-      return;
-    }
-
-    // Use LinkedIn's specific class names for job details
-    const jobTitleElement = document.querySelector('.t-24.job-details-jobs-unified-top-card__job-title');
-    const companyElement = document.querySelector('.job-details-jobs-unified-top-card__company-name');
-    
-    const jobTitle = jobTitleElement?.textContent?.trim() || 'Unknown Position';
-    const companyName = companyElement?.textContent?.trim() || 'Unknown Company';
-    
-    console.log('Found job details:', { jobTitle, companyName });
-
-    if (isJobAlreadyApplied(nextJob)) {
-      await sleep(500);
-      return;
-    }
-
-    scrollToJob(nextJob);
-    await sleep(1000);
-
-    if (!clickJob(nextJob)) {
-      console.log('Could not click the job card');
-      return;
-    }
-    await sleep(1000);
-    
-    const applied = await clickElement(SELECTORS.EASY_APPLY_BUTTON);
-    if (!applied) {
-      console.log('No Easy Apply button found');
-      return;
-    }
-
-    await sleep(1000);
-
-    continuing = true;
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    while (continuing && isRunning) {
-      if (!isRunning) {
-        console.log('Automation stopped, ending process');
-        continuing = false;
-        break;
+    while (isRunning) {
+      // Check for save application popup first
+      if (await handleSaveApplicationPopup()) {
+        await sleep(250);
       }
 
-      await sleep(500);
-
-      // Try to fill form fields on each step
-      await fillFormFields();
+      const nextJob = findNextJob();
       
-      // Give time for fields to be filled and validated
-      await sleep(500);
-
-      // Check if all required fields are filled
-      const fieldsAreFilled = await areAllFieldsFilled();
-      
-      if (!fieldsAreFilled) {
-        console.log('Waiting for all required fields to be filled...');
-        await sleep(1000);
-        // Check again after waiting
-        const recheckedFields = await areAllFieldsFilled();
-        if (!recheckedFields) {
-          console.log('Fields still not filled, waiting more...');
-          await sleep(1000);
-          continue;
-        }
-      }
-
-      // Wait until user is done typing before proceeding
-      while (await isUserStillTyping()) {
-        console.log('Waiting for user to finish typing...');
-        await sleep(500);
-      }
-
-      // Add a small delay after user is done typing
-      await sleep(1000);
-
-      // Only proceed with Review/Next/Submit if fields are filled and user is done typing
-      const reviewed = await clickAnyElement(SELECTORS.REVIEW_BUTTON);
-      if (reviewed) {
-        console.log('Clicked review button');
-        await sleep(500);
+      if (!nextJob) {
+        console.log("No job found, attempting to scroll for more jobs");
         
-        // Check fields again in review page
-        const reviewFieldsFilled = await areAllFieldsFilled();
-        if (!reviewFieldsFilled) {
-          console.log('Review page has empty required fields, waiting...');
-          await sleep(1000);
-          continue;
+        // Try to find the correct job list container using multiple selectors
+        const possibleSelectors = [
+          SELECTORS.JOBS_LIST,
+          'div.jobs-search-results-list',
+          'div.jobs-search-results__list',
+          'div.jobs-search-two-pane__results',
+          'div.GDWMPYlbLvJwwJkvOFRdwOcJxcoOxMsCHeyMgIQ', // The specific class from your screenshot
+          'div[class*="GDWMP"]', // Partial class match for LinkedIn's dynamic classes
+          '.jobs-search-results-list'
+        ];
+        
+        let jobList = null;
+        for (const selector of possibleSelectors) {
+          const element = document.querySelector(selector);
+          if (element && element.scrollHeight > 0) {
+            jobList = element;
+            console.log(`Found job list with selector: ${selector}`);
+            break;
+          }
         }
         
-        const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
-        if (submitted) {
-          console.log('Application submitted successfully');
+        let scrollPerformed = false;
+        
+        if (jobList) {
+          // Calculate a smooth scrolling amount (about 70% of viewport height)
+          const scrollAmount = window.innerHeight * 0.5;
+          const currentScrollTop = jobList.scrollTop;
           
-          // Wait a bit longer before tracking to ensure the submission is complete
-          await sleep(2000);
+          // Only scroll if we're not already at the bottom
+          const isAtBottom = jobList.scrollHeight - jobList.scrollTop <= jobList.clientHeight + 50;
           
-          // Track the application and wait for confirmation
-          const tracked = await trackSuccessfulApplication(jobTitle, companyName, nextJob);
-          if (!tracked) {
-            console.error('Failed to track application in database - stopping automation');
-            continuing = false;
-            isRunning = false;
-            await clickElement(SELECTORS.CLOSE_BUTTON);
-            return;
-          }
-          
-          continuing = false;
-          
-          // Wait for the "Application sent" modal
-          await sleep(1500);
-          
-          // Try to find and click the "Done" button in the success modal
-          const doneButton = findButtonByText('Done');
-          if (doneButton) {
-            console.log('Clicking Done button in success modal');
-            doneButton.click();
+          if (!isAtBottom) {
+            console.log(`Scrolling job list by ${scrollAmount}px to load more jobs (scrollTop: ${currentScrollTop}, scrollHeight: ${jobList.scrollHeight})`);
+            
+            // Force scroll upward first to trigger LinkedIn's job loading
+            jobList.scrollTo({
+              top: Math.max(0, currentScrollTop - 100),
+              behavior: 'smooth'
+            });
+            
             await sleep(1000);
+            
+            // Then scroll down more
+            jobList.scrollTo({
+              top: currentScrollTop + scrollAmount,
+              behavior: 'smooth'
+            });
+            
+            scrollPerformed = true;
           } else {
-            // Fallback to close button if Done button not found
-            await clickElement(SELECTORS.CLOSE_BUTTON);
-            await sleep(1000);
-          }
-
-          // Use the user's configured delay from settings, but ensure minimum delay
-          const configuredDelay = userData?.settings?.nextJobDelay || 5000;
-          const minDelay = 5000; // Minimum 5 seconds
-          const delay = Math.max(configuredDelay, minDelay);
-          
-          console.log(`Waiting ${delay/1000} seconds before next job...`);
-          await sleep(delay);
-
-          // Only proceed to next job if database insertion was successful
-          const nextJobCard = findNextJob();
-          if (nextJobCard) {
-            scrollToJob(nextJobCard);
-            await sleep(1500);
-            clickJob(nextJobCard);
-          }
-        } else {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            console.log('Could not find submit button, closing application');
-            continuing = false;
-            await clickElement(SELECTORS.CLOSE_BUTTON);
-          }
-          await sleep(500);
-        }
-      } else {
-        const submitted = await clickElement(SELECTORS.SUBMIT_BUTTON);
-        if (submitted) {
-          console.log('Application submitted successfully');
-          
-          // Wait a bit longer before tracking to ensure the submission is complete
-          await sleep(2000);
-          
-          // Track the application and wait for confirmation
-          const tracked = await trackSuccessfulApplication(jobTitle, companyName, nextJob);
-          if (!tracked) {
-            console.error('Failed to track application in database - stopping automation');
-            continuing = false;
-            isRunning = false;
-            await clickElement(SELECTORS.CLOSE_BUTTON);
-            return;
-          }
-          
-          continuing = false;
-          
-          // Wait for the "Application sent" modal
-          await sleep(1500);
-          
-          // Try to find and click the "Done" button in the success modal
-          const doneButton = findButtonByText('Done');
-          if (doneButton) {
-            console.log('Clicking Done button in success modal');
-            doneButton.click();
-            await sleep(1000);
-          } else {
-            // Fallback to close button if Done button not found
-            await clickElement(SELECTORS.CLOSE_BUTTON);
-            await sleep(1000);
-          }
-
-          // Use the user's configured delay from settings, but ensure minimum delay
-          const configuredDelay = userData?.settings?.nextJobDelay || 5000;
-          const minDelay = 5000; // Minimum 5 seconds
-          const delay = Math.max(configuredDelay, minDelay);
-          
-          console.log(`Waiting ${delay/1000} seconds before next job...`);
-          await sleep(delay);
-
-          // Only proceed to next job if database insertion was successful
-          const nextJobCard = findNextJob();
-          if (nextJobCard) {
-            scrollToJob(nextJobCard);
-            await sleep(1500);
-            clickJob(nextJobCard);
-          }
-        } else {
-          // Only try next button if all fields are properly filled
-          const fieldsReady = await areAllFieldsFilled();
-          if (fieldsReady) {
-            console.log('All fields filled, attempting to click next button...');
-            const hasNext = await clickAnyElement(SELECTORS.NEXT_BUTTON);
-            if (hasNext) {
-              console.log('Successfully clicked next button');
-              retryCount = 0;
-              await sleep(500);
+            console.log("Reached bottom of job list, trying to click next page number");
+            
+            // We're at the bottom of the list, try to click the next page number button
+            if (await clickNextPageNumber()) {
+              console.log("Successfully clicked next page number");
+              await sleep(3000); // Wait for next page to load
+              continue;
             } else {
-              console.log('No next button found, waiting...');
-              retryCount++;
-              if (retryCount >= maxRetries) {
-                console.log('Could not proceed with application, closing');
-                continuing = false;
-                await clickElement(SELECTORS.CLOSE_BUTTON);
+              // Fall back to the old method if page number navigation fails
+              console.log("Falling back to 'Next' button");
+              const nextPageButton = document.querySelector('button[aria-label="Next"]');
+              if (nextPageButton && isElementVisible(nextPageButton as HTMLElement)) {
+                console.log("Clicking next page button");
+                (nextPageButton as HTMLElement).click();
+                await sleep(3000); // Wait for next page to load
+                continue;
+              } else {
+                console.log("No pagination buttons found");
               }
-              await sleep(500);
             }
-          } else {
-            console.log('Waiting for fields to be filled before proceeding...');
-            await sleep(1000);
+          }
+        } else {
+          console.log("Could not find the job list element, trying direct window scroll");
+          
+          // If we couldn't find the job list, try scrolling the window directly
+          window.scrollBy({
+            top: window.innerHeight * 0.7,
+            behavior: 'smooth'
+          });
+          
+          scrollPerformed = true;
+        }
+        
+        // Wait longer for jobs to load after scrolling
+        if (scrollPerformed) {
+          await sleep(3000);
+            
+          // Check if scrolling loaded any new jobs
+          const newNextJob = findNextJob();
+          if (newNextJob) {
+            console.log("Found new job after scrolling");
+            continue; // Skip to next iteration to process this job
           }
         }
+        
+        console.log("Waiting before next job check");
+        await sleep(2000); // Only 2 seconds wait when no jobs found
+        continue;
+      }
+
+      try {
+        console.log("Processing job: " + nextJob.textContent?.substring(0, 30)?.trim());
+        scrollToJob(nextJob);
+        await sleep(1000); // Reduced from 2000ms
+
+        if (!clickJob(nextJob)) {
+          console.log("Failed to click job, moving to next");
+          // Mark this job as applied so we don't get stuck on it
+          markJobAsApplied(nextJob);
+          continue;
+        }
+        await sleep(1000); // Reduced from 2000ms
+        
+        if (!await clickElement(SELECTORS.EASY_APPLY_BUTTON)) {
+          console.log("Failed to click Easy Apply button, moving to next job");
+          // Mark this job as applied so we don't get stuck on it
+          markJobAsApplied(nextJob);
+          continue;
+        }
+
+        // Get job details
+        const jobTitleElement = document.querySelector('.t-24.job-details-jobs-unified-top-card__job-title');
+        const companyElement = document.querySelector('.job-details-jobs-unified-top-card__company-name');
+        
+        const jobTitle = jobTitleElement?.textContent?.trim() || 'Unknown Position';
+        const companyName = companyElement?.textContent?.trim() || 'Unknown Company';
+        console.log(`Applying to: ${jobTitle} at ${companyName}`);
+
+        continuing = true;
+        let retryCount = 0;
+        const maxRetries = 3;
+        let currentFormCompleted = false;
+
+        // Main application loop - stays on current form until completed
+        while (continuing && isRunning) {
+          // Check for save application popup
+          if (await handleSaveApplicationPopup()) {
+            await sleep(250); // Reduced from 500ms
+            continue;
+          }
+
+          // Display a message to the user that they can interact with the form
+          const formElement = document.querySelector('.jobs-easy-apply-modal__content');
+          if (formElement) {
+            console.log("✍️ Form is ready - you can fill in fields and the script will wait for you to finish");
+          }
+
+          // Wait for form completion (user filling fields)
+          console.log("Waiting for form completion...");
+          const formCompleted = await waitForFormCompletion();
+          
+          if (!formCompleted) {
+            console.log("Form completion timed out");
+            continuing = false;
+            // Make sure to click close button before breaking
+            await clickElement(SELECTORS.CLOSE_BUTTON);
+            break;
+          }
+          
+          console.log("All fields filled, proceeding to next step");
+          
+          // Try to click next/submit button
+          const buttonClicked = await handleButtonClick(jobTitle, companyName, nextJob);
+          
+          if (!buttonClicked) {
+            retryCount++;
+            console.log(`Failed to click button, retry ${retryCount}/${maxRetries}`);
+            if (retryCount >= maxRetries) {
+              await clickElement(SELECTORS.CLOSE_BUTTON);
+              continuing = false;
+              break;
+            }
+            await sleep(500); // Reduced from 1000ms
+            continue;
+          }
+
+          // Reset retry count after successful button click
+          retryCount = 0;
+          
+          // Wait for new form to load or submit to complete
+          await sleep(1000); // Reduced from 2000ms
+          
+          // Check if we're still in the application modal
+          const modal = document.querySelector('.artdeco-modal__content.jobs-easy-apply-modal__content');
+          if (!modal) {
+            console.log("Application completed successfully");
+            currentFormCompleted = true;
+            break;
+          }
+
+          // After clicking any button, check for save popup
+          if (buttonClicked) {
+            await sleep(250); // Reduced from 500ms
+            if (await handleSaveApplicationPopup()) {
+              await sleep(250); // Reduced from 500ms
+            }
+          }
+        }
+
+        // Only mark as applied if we completed the application
+        if (currentFormCompleted) {
+          console.log("Marking job as applied and moving to next");
+          markJobAsApplied(nextJob);
+          await sleep(1500); // Reduced from 3000ms - wait before moving to next job
+        } else {
+          console.log("Application not completed, closing modal");
+          // Make sure to click close button here as well
+          await clickElement(SELECTORS.CLOSE_BUTTON);
+          // Still mark the job as applied to avoid getting stuck
+          markJobAsApplied(nextJob);
+        }
+
+      } catch (error) {
+        console.error("Error during application process:", error);
+        // Check for save popup before closing
+        await handleSaveApplicationPopup();
+        await clickElement(SELECTORS.CLOSE_BUTTON);
+        // Mark job as applied to avoid getting stuck
+        if (nextJob) markJobAsApplied(nextJob);
+        continue;
       }
     }
   } catch (error) {
-    console.error('Error during application process:', error);
+    console.error("Fatal error in processApplication:", error);
     continuing = false;
+    await handleSaveApplicationPopup();
     await clickElement(SELECTORS.CLOSE_BUTTON);
   }
 };
 
 const startAutomation = () => {
-  console.log('Starting automation...');
   isRunning = true;
   continuing = false;
   
-  chrome.storage.local.set({ isAutomationRunning: true }, () => {
-    console.log('Automation state saved: running');
-  });
+  chrome.storage.local.set({ isAutomationRunning: true });
   
   if (automationInterval) {
     window.clearInterval(automationInterval);
@@ -746,7 +1118,6 @@ const startAutomation = () => {
   
   automationInterval = window.setInterval(async () => {
     if (!isRunning) {
-      console.log('Automation stopped, clearing interval');
       if (automationInterval) {
         window.clearInterval(automationInterval);
         automationInterval = null;
@@ -757,11 +1128,10 @@ const startAutomation = () => {
     if (!continuing) {
       await processApplication();
     }
-  }, 1000); // Reduced from 3000ms to 1000ms
+  }, 2000);
 };
 
 const stopAutomation = () => {
-  console.log('Stopping automation...');
   isRunning = false;
   if (automationInterval) {
     window.clearInterval(automationInterval);
@@ -771,47 +1141,26 @@ const stopAutomation = () => {
   continuing = false;
   
   // Store the stopped state
-  chrome.storage.local.set({ isAutomationRunning: false }, () => {
-    console.log('Automation state saved: stopped');
-  });
+  chrome.storage.local.set({ isAutomationRunning: false });
 };
 
-// Initialize state when content script loads
 const initializeState = async () => {
-  try {
-    // First initialize the Supabase client with stored session
-    const isAuthenticated = await initSupabaseClient();
-    console.log('Supabase client initialized, authenticated:', isAuthenticated);
-
-    if (!isAuthenticated) {
-      console.error('Failed to initialize Supabase client - please sign in to the extension');
-      return;
+  chrome.storage.local.get(['isAutomationRunning', 'userData'], (result) => {
+    if (result.isAutomationRunning) {
+      userData = result.userData;
+      startAutomation();
+    } else {
+      isRunning = false;
+      continuing = false;
     }
-
-    chrome.storage.local.get(['isAutomationRunning', 'userData'], (result) => {
-      if (result.isAutomationRunning) {
-        console.log('Restoring automation state: running');
-        userData = result.userData;
-        startAutomation();
-      } else {
-        console.log('Restoring automation state: stopped');
-        isRunning = false;
-        continuing = false;
-      }
-    });
-  } catch (error) {
-    console.error('Error during initialization:', error);
-  }
+  });
 };
 
 // Message listener
 chrome.runtime.onMessage.addListener((message: MessageType, sender, sendResponse: (response: ResponseType) => void) => {
-  console.log('Received message:', message);
-  
   switch (message.type) {
     case 'START_AUTOMATION':
       if (message.settings) {
-        console.log('Updating settings:', message.settings);
         userData = {
           ...userData,
           settings: {

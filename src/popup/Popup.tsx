@@ -468,7 +468,6 @@ const Popup: React.FC = () => {
     const initializeData = async () => {
       const authResult = await checkAuth();
       if (!authResult) {
-        console.log('⚠️ [Popup] Skipping profile fetch - not authenticated');
         return;
       }
 
@@ -478,23 +477,19 @@ const Popup: React.FC = () => {
       // Get saved user data from storage first
       chrome.storage.local.get(['userData'], async (result) => {
         if (result.userData) {
-          console.log('📦 [Popup] Found stored user data');
           setUserData(result.userData);
           // Set the delay from saved settings
           if (result.userData.settings?.nextJobDelay) {
             const savedDelay = Math.floor(result.userData.settings.nextJobDelay / 1000);
-            console.log('⚙️ [Popup] Loading saved delay:', savedDelay, 'seconds');
             setDelay(savedDelay);
           }
         }
         
         // Then fetch latest profile data from Supabase
         try {
-          console.log('🔄 [Popup] Fetching fresh profile data...');
           const profileData = await getUserProfile();
           
           if (profileData) {
-            console.log('✅ [Popup] Updating with new profile data');
             const updatedData = {
               ...defaultUserData,
               ...profileData,
@@ -506,12 +501,8 @@ const Popup: React.FC = () => {
             
             setUserData(updatedData);
             await chrome.storage.local.set({ userData: updatedData });
-            console.log('💾 [Popup] Saved updated profile data');
-          } else {
-            console.log('⚠️ [Popup] No profile data received from database');
           }
         } catch (error) {
-          console.error('❌ [Popup] Profile fetch error:', error);
         }
       });
     };
@@ -522,7 +513,6 @@ const Popup: React.FC = () => {
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
       if (changes.isAutomationRunning) {
         setIsRunning(changes.isAutomationRunning.newValue);
-        console.log('🔄 [Popup] Automation state updated:', changes.isAutomationRunning.newValue);
       }
     };
 
@@ -546,7 +536,6 @@ const Popup: React.FC = () => {
       setIsAuthenticated(!!user);
       return !!user;
     } catch (error) {
-      console.error('Auth check failed:', error);
       setIsAuthenticated(false);
       return false;
     }
@@ -555,17 +544,12 @@ const Popup: React.FC = () => {
   const checkAutomationState = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
-        console.log('🔍 [Popup] Checking automation state...');
         chrome.tabs.sendMessage(
           tabs[0].id,
           { type: 'GET_STATE' } as MessageType,
           (response: ResponseType) => {
             if (response?.isRunning !== undefined) {
-              console.log('✅ [Popup] Current automation state:', response.isRunning);
               setIsRunning(response.isRunning);
-            } else {
-              console.log('⚠️ [Popup] No response from content script, assuming not running');
-              setIsRunning(false);
             }
           }
         );
@@ -595,7 +579,6 @@ const Popup: React.FC = () => {
       await signOut();
       setIsAuthenticated(false);
     } catch (error) {
-      console.error('Sign out failed:', error);
     }
   };
 
@@ -633,7 +616,6 @@ const Popup: React.FC = () => {
     
     setUserData(updatedData);
     await chrome.storage.local.set({ userData: updatedData });
-    console.log('💾 [Popup] Saved settings:', updatedData.settings);
   };
 
   if (!isAuthenticated) {

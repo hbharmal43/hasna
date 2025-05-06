@@ -5,6 +5,81 @@ let isRunning = false;
 let automationInterval: number | null = null;
 let userData: UserProfile | null = null;
 let continuing = false;
+// Track job IDs that have already been processed to avoid duplicates
+const appliedJobIds = new Set<string>();
+// Track jobs with 409 Conflict errors to avoid logging multiple times
+const skipped409Jobs = new Set<string>();
+
+// Save the original fetch function
+const originalFetch = window.fetch;
+
+// Patch the fetch API to intercept LinkedIn API calls and handle 409 errors
+window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
+  // Check if this is a LinkedIn Easy Apply API request
+  let url = '';
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.toString();
+  } else if ('url' in input) {
+    // It's a Request object
+    url = input.url;
+  }
+  
+  if (url.includes('voyagerJobsDashOnsiteApplyApplication') && init?.method === 'POST') {
+    try {
+      // Extract the job ID from the URL or body
+      let jobId = '';
+      try {
+        if (init.body) {
+          const bodyText = init.body.toString();
+          // Try to extract the job ID from the request body
+          const match = bodyText.match(/jobId=(\d+)/);
+          if (match && match[1]) {
+            jobId = match[1];
+          }
+        }
+        
+        if (!jobId) {
+          // Try to extract from URL
+          const urlMatch = url.match(/jobId=(\d+)/);
+          if (urlMatch && urlMatch[1]) {
+            jobId = urlMatch[1];
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors, just continue
+      }
+      
+      // Make the actual request
+      const response = await originalFetch(input, init);
+      
+      // If we get a 409 Conflict and have a job ID
+      if (response.status === 409 && jobId) {
+        if (!skipped409Jobs.has(jobId)) {
+          console.log(`🔁 Skipping already-applied job ID: ${jobId}`);
+          skipped409Jobs.add(jobId);
+          
+          // Persist to Chrome storage
+          chrome.storage.local.get(['skipped409Jobs'], result => {
+            const storedIds = result.skipped409Jobs || [];
+            if (!storedIds.includes(jobId)) {
+              storedIds.push(jobId);
+              chrome.storage.local.set({ skipped409Jobs: storedIds });
+            }
+          });
+        }
+      }
+      
+      return response;
+    } catch (error) {
+      return await originalFetch(input, init);
+    }
+  }
+  
+  // For all other requests, just pass through to the original fetch
+  return await originalFetch(input, init);
+};
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -585,7 +660,31 @@ const trackSuccessfulApplication = async (jobTitle: string, companyName: string,
       return false;
     }
     
+    // Check if this job has already been processed in this session
+    if (appliedJobIds.has(jobId)) {
+      console.log(`⏭️ Job ${jobId} already processed in this session. Skipping.`);
+      return true;
+    }
+    
+    // Mark job as processed immediately to prevent duplicate processing
+    appliedJobIds.add(jobId);
+    
+    // Mark job as applied in the DOM immediately
+    jobElement.setAttribute('data-applied', 'true');
+    
+    // Also mark any other instances of this job as applied right away
+    document.querySelectorAll(`[data-job-id="${jobId}"]`).forEach(card => {
+      card.setAttribute('data-applied', 'true');
+    });
+    
     console.log(`📝 Tracking application for "${jobTitle}" at "${companyName}" (ID: ${jobId})`);
+    
+    // Add the job ID to Chrome storage for persistence
+    chrome.storage.local.get(['appliedJobIds'], result => {
+      const storedIds = result.appliedJobIds || [];
+      storedIds.push(jobId);
+      chrome.storage.local.set({ appliedJobIds: [...new Set(storedIds)] });
+    });
     
     // Get additional job details
     const locationElement = document.querySelector('.job-details-jobs-unified-top-card__bullet');
@@ -636,17 +735,9 @@ const trackSuccessfulApplication = async (jobTitle: string, companyName: string,
 
     if (result) {
       console.log(`✅ Successfully tracked application for "${jobTitle}" at "${companyName}"`);
-      markJobAsApplied(jobElement);
-      
-      // Also mark any other instances of this job as applied
-      document.querySelectorAll(`[data-job-id="${jobId}"]`).forEach(card => {
-        card.setAttribute('data-applied', 'true');
-      });
       return true;
     } else {
       console.log(`⚠️ Failed to track application in database but continuing`);
-      // Still mark as applied locally even if database tracking failed
-      markJobAsApplied(jobElement);
       return true;
     }
   } catch (error) {
@@ -665,6 +756,8 @@ const handleButtonClick = async (jobTitle: string, companyName: string, jobEleme
   if (submitButton && isElementVisible(submitButton)) {
     await sleep(500);
     submitButton.click();
+    
+    // Track the successful application
     await trackSuccessfulApplication(jobTitle, companyName, jobElement);
     
     // Wait 1 second after submit click
@@ -862,6 +955,39 @@ const clickNextPageNumber = async (): Promise<boolean> => {
   }
 };
 
+/**
+ * Dynamically detects the scrollable job list container based on structure and behavior
+ * instead of relying on hardcoded class names.
+ * @returns The scrollable container div element or null if not found
+ */
+const findScrollableJobListContainer = (): HTMLElement | null => {
+  const allDivs = Array.from(document.querySelectorAll('div'));
+
+  for (const div of allDivs) {
+    const style = window.getComputedStyle(div);
+
+    // Must be scrollable vertically
+    const isScrollableY =
+      (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+      div.scrollHeight > div.clientHeight;
+
+    // Must contain at least 5 <li> job cards inside
+    const jobItems = div.querySelectorAll(
+      'li.scaffold-layout__list-item, li.jobs-search-results__list-item, li[class*="job-card-search"]'
+    );
+
+    if (isScrollableY && jobItems.length >= 5) {
+      console.log("✅ Found scrollable job container:", div);
+      console.log("📦 ClassName:", div.className);
+      localStorage.setItem("lastSuccessfulScrollClass", div.className); // optional debug
+      return div;
+    }
+  }
+
+  console.warn("❌ Could not detect scrollable job list container");
+  return null;
+};
+
 const processApplication = async () => {
   try {
     while (isRunning) {
@@ -875,26 +1001,8 @@ const processApplication = async () => {
       if (!nextJob) {
         console.log("No job found, attempting to scroll for more jobs");
         
-        // Try to find the correct job list container using multiple selectors
-        const possibleSelectors = [
-          SELECTORS.JOBS_LIST,
-          'div.jobs-search-results-list',
-          'div.jobs-search-results__list',
-          'div.jobs-search-two-pane__results',
-          'div.GDWMPYlbLvJwwJkvOFRdwOcJxcoOxMsCHeyMgIQ', // The specific class from your screenshot
-          'div[class*="GDWMP"]', // Partial class match for LinkedIn's dynamic classes
-          '.jobs-search-results-list'
-        ];
-        
-        let jobList = null;
-        for (const selector of possibleSelectors) {
-          const element = document.querySelector(selector);
-          if (element && element.scrollHeight > 0) {
-            jobList = element;
-            console.log(`Found job list with selector: ${selector}`);
-            break;
-          }
-        }
+        // Use dynamic detection instead of hardcoded selectors
+        let jobList = findScrollableJobListContainer();
         
         let scrollPerformed = false;
         
@@ -1076,15 +1184,36 @@ const processApplication = async () => {
 
         // Only mark as applied if we completed the application
         if (currentFormCompleted) {
-          console.log("Marking job as applied and moving to next");
-          markJobAsApplied(nextJob);
+          console.log("Application successfully completed, waiting before moving to next job");
+          // Note: We don't need to call markJobAsApplied here since it's already handled in trackSuccessfulApplication
           await sleep(1500); // Reduced from 3000ms - wait before moving to next job
         } else {
           console.log("Application not completed, closing modal");
           // Make sure to click close button here as well
           await clickElement(SELECTORS.CLOSE_BUTTON);
+          
           // Still mark the job as applied to avoid getting stuck
-          markJobAsApplied(nextJob);
+          // Get the job ID if possible
+          const jobId = nextJob.closest('[data-job-id]')?.getAttribute('data-job-id') || 
+                      window.location.href.match(/\/view\/(\d+)\//)?.[1];
+          
+          if (jobId && !appliedJobIds.has(jobId)) {
+            // Add to our tracking set
+            appliedJobIds.add(jobId);
+            
+            // Mark in DOM
+            markJobAsApplied(nextJob);
+            
+            // Add to storage
+            chrome.storage.local.get(['appliedJobIds'], result => {
+              const storedIds = result.appliedJobIds || [];
+              storedIds.push(jobId);
+              chrome.storage.local.set({ appliedJobIds: [...new Set(storedIds)] });
+            });
+          } else {
+            // Just mark in DOM if we can't get the ID
+            markJobAsApplied(nextJob);
+          }
         }
 
       } catch (error) {
@@ -1092,8 +1221,30 @@ const processApplication = async () => {
         // Check for save popup before closing
         await handleSaveApplicationPopup();
         await clickElement(SELECTORS.CLOSE_BUTTON);
+        
         // Mark job as applied to avoid getting stuck
-        if (nextJob) markJobAsApplied(nextJob);
+        if (nextJob) {
+          const jobId = nextJob.closest('[data-job-id]')?.getAttribute('data-job-id') || 
+                      window.location.href.match(/\/view\/(\d+)\//)?.[1];
+          
+          if (jobId && !appliedJobIds.has(jobId)) {
+            // Add to our tracking set
+            appliedJobIds.add(jobId);
+            
+            // Mark in DOM
+            markJobAsApplied(nextJob);
+            
+            // Add to storage
+            chrome.storage.local.get(['appliedJobIds'], result => {
+              const storedIds = result.appliedJobIds || [];
+              storedIds.push(jobId);
+              chrome.storage.local.set({ appliedJobIds: [...new Set(storedIds)] });
+            });
+          } else {
+            // Just mark in DOM if we can't get the ID
+            markJobAsApplied(nextJob);
+          }
+        }
         continue;
       }
     }
@@ -1145,7 +1296,19 @@ const stopAutomation = () => {
 };
 
 const initializeState = async () => {
-  chrome.storage.local.get(['isAutomationRunning', 'userData'], (result) => {
+  chrome.storage.local.get(['isAutomationRunning', 'userData', 'appliedJobIds', 'skipped409Jobs'], (result) => {
+    // Load persisted applied job IDs into memory
+    if (result.appliedJobIds && Array.isArray(result.appliedJobIds)) {
+      result.appliedJobIds.forEach(id => appliedJobIds.add(id));
+      console.log(`📋 Loaded ${appliedJobIds.size} previously applied jobs from storage`);
+    }
+    
+    // Load persisted skipped 409 job IDs into memory
+    if (result.skipped409Jobs && Array.isArray(result.skipped409Jobs)) {
+      result.skipped409Jobs.forEach(id => skipped409Jobs.add(id));
+      console.log(`📋 Loaded ${skipped409Jobs.size} previously skipped 409 jobs from storage`);
+    }
+    
     if (result.isAutomationRunning) {
       userData = result.userData;
       startAutomation();

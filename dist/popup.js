@@ -45707,23 +45707,29 @@ const trackJobApplication = async (position, company, additionalData) => {
             .insert([applicationData]);
         // If insert fails, try update using upsert
         if (insertError) {
-            console.log(`⚠️ Insert failed (${insertError.code}), trying upsert`);
-            // Use upsert with onConflict for reliability
-            const { error: upsertError } = await exports.supabase
-                .from('applications')
-                .upsert([applicationData], {
-                onConflict: 'user_id,linkedin_job_id',
-                ignoreDuplicates: false
-            });
-            if (upsertError) {
-                console.error('❌ Failed to track job application:', upsertError);
+            if (insertError.code === '23505') {
+                // Unique constraint violation - this is expected sometimes, handle quietly with upsert
+                const { error: upsertError } = await exports.supabase
+                    .from('applications')
+                    .upsert([applicationData], {
+                    onConflict: 'user_id,linkedin_job_id',
+                    ignoreDuplicates: false
+                });
+                if (upsertError) {
+                    console.error('❌ Failed to track job application:', upsertError);
+                    return false;
+                }
+                console.log(`✅ Application upserted (duplicate avoided): ${sanitizedPosition} at ${sanitizedCompany}`);
+            }
+            else {
+                // Some other error occurred
+                console.error('❌ Insert failed:', insertError);
                 return false;
             }
         }
-        console.log('✅ [DB] Successfully tracked application for:', {
-            position: sanitizedPosition,
-            company: sanitizedCompany
-        });
+        else {
+            console.log(`✅ Application inserted: ${sanitizedPosition} at ${sanitizedCompany}`);
+        }
         return true;
     }
     catch (error) {

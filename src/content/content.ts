@@ -1,5 +1,12 @@
+// Lot of vagueness, need to add a detail comment of what that soecific funciton does, If possible try to seperate the functions in different like
+// files so thats easy and dosent get too complex in future
+
 import { MessageType, ResponseType, SELECTORS, UserProfile } from '../types';
-import { trackJobApplication, getSession, getCurrentUser, initSupabaseClient } from '../lib/supabase';
+import { trackJobApplication, getSession, getCurrentUser, initSupabaseClient, ensureAuthenticated } from '../lib/supabase';
+// @ts-ignore
+import { autofillRouter } from './autofillEngine';
+
+console.log("LinkedIn Easy Apply content script loaded");
 
 let isRunning = false;
 let automationInterval: number | null = null;
@@ -12,6 +19,8 @@ const skipped409Jobs = new Set<string>();
 
 // Save the original fetch function
 const originalFetch = window.fetch;
+
+// No need to athc this, since this is linkedins problem
 
 // Patch the fetch API to intercept LinkedIn API calls and handle 409 errors
 window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
@@ -146,6 +155,9 @@ const clickAnyElement = async (selectors: string[]): Promise<boolean> => {
     }
   }
 
+
+
+  // Need to provide fukl class name, ther might be some other class name with same variable name,
   // Try finding primary buttons that might be next/review buttons
   const primaryButtons = document.querySelectorAll('.artdeco-button--primary');
   for (const button of primaryButtons) {
@@ -160,7 +172,7 @@ const clickAnyElement = async (selectors: string[]): Promise<boolean> => {
 
   return false;
 };
-
+// i dont think this is been used?
 const findVisibleElement = (selector: string): HTMLElement | null => {
   const element = document.querySelector(selector) as HTMLElement;
   if (element && isElementVisible(element)) {
@@ -532,32 +544,83 @@ const fillFormFields = async (): Promise<boolean> => {
 };
 
 const isJobAlreadyApplied = (jobCard: HTMLElement): boolean => {
-  // Check for LinkedIn's "Applied" status text
-  const appliedText = jobCard.querySelector('.artdeco-inline-feedback__message');
-  if (appliedText?.textContent?.trim().toLowerCase().includes('applied')) {
+  // Layout-agnostic check for "Applied" text in any span
+  const appliedTextSpans = Array.from(jobCard.querySelectorAll('span[dir="ltr"]')).some(span =>
+    span.textContent?.trim().toLowerCase().includes('applied')
+  );
+  if (appliedTextSpans) {
+    return true;
+  }
+
+  // Check for LinkedIn's "Applied" status text in any element
+  const appliedTexts = Array.from(jobCard.querySelectorAll('*')).some(el => 
+    el.textContent?.trim().toLowerCase() === 'applied'
+  );
+  if (appliedTexts) {
     return true;
   }
 
   // Check for "Applied" button state
-  const appliedButton = jobCard.querySelector('.jobs-apply-button--applied');
+  const appliedButton = jobCard.querySelector('.jobs-apply-button--applied, [aria-label*="Applied"]');
   if (appliedButton) {
     return true;
   }
 
-  // Check for any element containing "Applied" text
-  const appliedStatus = jobCard.querySelector('.job-card-container__footer-item');
-  if (appliedStatus?.textContent?.trim().toLowerCase().includes('applied')) {
+  // Check for any feedback message containing "Applied"
+  const feedbackMessage = jobCard.querySelector('.artdeco-inline-feedback__message');
+  if (feedbackMessage?.textContent?.trim().toLowerCase().includes('applied')) {
     return true;
+  }
+
+  // Check for any footer item containing "Applied" text
+  const footerItems = jobCard.querySelectorAll('[class*="footer-item"]');
+  for (const item of footerItems) {
+    if (item.textContent?.trim().toLowerCase().includes('applied')) {
+      return true;
+    }
   }
 
   return false;
 };
 
+/**
+ * Layout-agnostic check for whether a job card is an Easy Apply job.
+ * Looks for a span[dir="ltr"] containing "easy apply" (case-insensitive),
+ * and optionally checks for a LinkedIn icon SVG.
+ */
+function isEasyApplyCard(card: HTMLElement): boolean {
+  // Look for any span[dir="ltr"] with text "easy apply"
+  const easyApplyLabel = Array.from(card.querySelectorAll('span[dir="ltr"]')).find(span =>
+    span.textContent?.trim().toLowerCase().includes("easy apply")
+  );
+  if (!easyApplyLabel) return false;
+
+  // Optionally, confirm with LinkedIn icon (not strictly required)
+  // const hasLinkedInIcon = !!card.querySelector('svg[data-test-icon*="linkedin"]');
+  // return hasLinkedInIcon;
+
+  return true;
+}
+
+
+
+//  Need ti cleanuo all the console logs
+
 const findNextJob = (): HTMLElement | null => {
-  // Get all visible job cards on the current page
+  // Get all visible job cards on the current page using expanded selector list
   const jobCards = Array.from(document.querySelectorAll(SELECTORS.JOB_CARD));
   
-  // Look for the next non-applied job
+  if (jobCards.length === 0) {
+    console.warn("⚠️ No job cards found with current selectors. LinkedIn layout might be different.");
+    // Try logging some visible list items to help debug
+    const allListItems = Array.from(document.querySelectorAll('li'));
+    const visibleListItems = allListItems.filter(li => isElementVisible(li as HTMLElement));
+    console.log(`📊 Found ${visibleListItems.length} visible list items on page`);
+    
+    return null;
+  }
+  
+  // Look for the next non-applied Easy Apply job
   for (const jobCard of jobCards) {
     const card = jobCard as HTMLElement;
     
@@ -571,11 +634,17 @@ const findNextJob = (): HTMLElement | null => {
       continue;
     }
 
+    // Only proceed if this is an Easy Apply card
+    if (!isEasyApplyCard(card)) {
+      continue;
+    }
+
     // Found a job to apply to
     return card;
   }
 
   // No jobs found to apply to
+  console.log("⚠️ No applicable job cards found - may need to scroll or load more");
   return null;
 };
 
@@ -588,21 +657,27 @@ const markJobAsApplied = (jobElement: HTMLElement) => {
 };
 
 const clickJob = (jobElement: HTMLElement): boolean => {
-  // First try to find the job title link specifically
-  const jobTitleLink = jobElement.querySelector(SELECTORS.JOB_TITLE_LINK) as HTMLElement;
-  if (jobTitleLink && isElementVisible(jobTitleLink)) {
-    jobTitleLink.click();
+  // Try finding any clickable anchor in the job card using more comprehensive selectors
+  const clickable = jobElement.querySelector('a.job-card-container__link, a[class*="job-card"], a[data-control-name="job_card_title"], a[href*="/jobs/view/"], a') as HTMLElement;
+  
+  if (clickable && isElementVisible(clickable)) {
+    clickable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    clickable.click();
     return true;
   }
-
-  // Fallback to finding any clickable element if title link isn't found
-  const clickableElement = jobElement.querySelector('a[href*="/jobs/view/"], button[data-job-id]') as HTMLElement;
-  if (clickableElement && isElementVisible(clickableElement)) {
-    clickableElement.click();
+  
+  // Fallback to any button if no anchor found
+  const clickableButton = jobElement.querySelector('button[data-job-id]') as HTMLElement;
+  if (clickableButton && isElementVisible(clickableButton)) {
+    clickableButton.click();
     return true;
   }
-
-  return false;
+  
+  // Last resort - try clicking the job card itself
+  console.warn("⚠️ No clickable anchor or button found inside job card. Trying to click the card itself.");
+  jobElement.click();
+  
+  return true; // Return true to avoid getting stuck, log will show if we had to resort to clicking the card
 };
 
 const areAllFieldsFilled = async (): Promise<boolean> => {
@@ -651,9 +726,49 @@ const verifySession = async () => {
 
 const trackSuccessfulApplication = async (jobTitle: string, companyName: string, jobElement: HTMLElement) => {
   try {
-    // Get the job ID from either the closest parent with data-job-id or from the URL
-    const jobId = jobElement.closest('[data-job-id]')?.getAttribute('data-job-id') || 
-                  window.location.href.match(/\/view\/(\d+)\//)?.[1];
+    // Improved job ID extraction with multiple methods
+    let jobId = null;
+    
+    // Method 1: Get from job element's data attribute
+    jobId = jobElement.closest('[data-job-id]')?.getAttribute('data-job-id');
+    
+    // Method 2: Get from URL
+    if (!jobId) {
+      const urlMatch = window.location.href.match(/\/view\/(\d+)\//);
+      if (urlMatch && urlMatch[1]) {
+        jobId = urlMatch[1];
+      }
+    }
+    
+    // Method 3: Get from job details section
+    if (!jobId) {
+      const jobDetailsElement = document.querySelector('.jobs-unified-top-card');
+      if (jobDetailsElement) {
+        // Try to find any element with data-job-id
+        const jobIdElement = jobDetailsElement.querySelector('[data-job-id]');
+        if (jobIdElement) {
+          jobId = jobIdElement.getAttribute('data-job-id');
+        }
+      }
+    }
+    
+    // Method 4: Extract from a nearby Apply button (which often has the job ID)
+    if (!jobId) {
+      const applyButton = document.querySelector('.jobs-apply-button');
+      if (applyButton) {
+        const applyId = applyButton.getAttribute('data-job-id');
+        if (applyId) {
+          jobId = applyId;
+        }
+      }
+    }
+    
+    // Method 5: As a last resort, create a synthetic ID from job title and company
+    if (!jobId) {
+      // Create a synthetic ID from job title and company name
+      jobId = `${Date.now()}-${jobTitle.replace(/[^a-zA-Z0-9]/g, '')}-${companyName.replace(/[^a-zA-Z0-9]/g, '')}`;
+      console.log('🔧 Created synthetic job ID:', jobId);
+    }
                  
     if (!jobId) {
       console.log('❌ Could not extract job ID for tracking');
@@ -721,8 +836,8 @@ const trackSuccessfulApplication = async (jobTitle: string, companyName: string,
       }
     }
     
-    // Try to save the application to the database
-    const result = await trackJobApplication(jobTitle, companyName, {
+    // Job application data to save
+    const jobData = {
       linkedin_job_id: jobId,
       location: location,
       work_type: workType as 'onsite' | 'remote' | 'hybrid',
@@ -731,7 +846,23 @@ const trackSuccessfulApplication = async (jobTitle: string, companyName: string,
       salary_currency: 'USD',
       job_description: descriptionElement?.textContent?.trim() || '',
       company_url: companyUrlElement?.getAttribute('href') || undefined
-    });
+    };
+    
+    // Try to save the application to the database
+    let result = await trackJobApplication(jobTitle, companyName, jobData);
+
+    // If tracking failed, try to re-authenticate and try again
+    if (!result) {
+      console.log('⚠️ Initial tracking failed, attempting to re-authenticate...');
+      // Try to ensure we're authenticated
+      const authResult = await ensureAuthenticated();
+      console.log('Re-authentication result:', authResult);
+      
+      if (authResult) {
+        // Try to save again after re-authenticating
+        result = await trackJobApplication(jobTitle, companyName, jobData);
+      }
+    }
 
     if (result) {
       console.log(`✅ Successfully tracked application for "${jobTitle}" at "${companyName}"`);
@@ -961,7 +1092,19 @@ const clickNextPageNumber = async (): Promise<boolean> => {
  * @returns The scrollable container div element or null if not found
  */
 const findScrollableJobListContainer = (): HTMLElement | null => {
+  // First try to find job list using known selector
+  const jobListContainer = document.querySelector(SELECTORS.JOBS_LIST);
+  if (jobListContainer && 
+      (window.getComputedStyle(jobListContainer as HTMLElement).overflowY === 'auto' ||
+       window.getComputedStyle(jobListContainer as HTMLElement).overflowY === 'scroll')) {
+    return jobListContainer as HTMLElement;
+  }
+
+  // If not found with known selector, try dynamic detection
   const allDivs = Array.from(document.querySelectorAll('div'));
+
+  let bestMatch: HTMLElement | null = null;
+  let maxJobItems = 0;
 
   for (const div of allDivs) {
     const style = window.getComputedStyle(div);
@@ -971,15 +1114,46 @@ const findScrollableJobListContainer = (): HTMLElement | null => {
       (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
       div.scrollHeight > div.clientHeight;
 
-    // Must contain at least 5 <li> job cards inside
-    const jobItems = div.querySelectorAll(
-      'li.scaffold-layout__list-item, li.jobs-search-results__list-item, li[class*="job-card-search"]'
-    );
+    if (!isScrollableY) continue;
 
-    if (isScrollableY && jobItems.length >= 5) {
-      console.log("✅ Found scrollable job container:", div);
-      console.log("📦 ClassName:", div.className);
-      localStorage.setItem("lastSuccessfulScrollClass", div.className); // optional debug
+    // Try different job card selectors to find container with most cards
+    // Use the expanded selectors similar to JOB_CARD in SELECTORS
+    const jobSelectors = [
+      'li.scaffold-layout__list-item',
+      'li.jobs-search-results__list-item',
+      'li.job-card-container',
+      'li.job-card-job-posting-card-wrapper',
+      'li[class*="job-card"]',
+      'li[class*="job-posting"]'
+    ];
+
+    let totalJobItems = 0;
+    for (const selector of jobSelectors) {
+      const items = div.querySelectorAll(selector);
+      totalJobItems += items.length;
+    }
+
+    // If this container has more job items than our previous best match, update
+    if (isScrollableY && totalJobItems > maxJobItems) {
+      maxJobItems = totalJobItems;
+      bestMatch = div;
+    }
+  }
+
+  if (bestMatch && maxJobItems >= 3) {
+    localStorage.setItem("lastSuccessfulScrollClass", bestMatch.className); // optional debug
+    return bestMatch;
+  }
+
+  // Last resort - try to find any scrollable container with <li> elements
+  for (const div of allDivs) {
+    const style = window.getComputedStyle(div);
+    const isScrollableY =
+      (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+      div.scrollHeight > div.clientHeight;
+
+    const listItems = div.querySelectorAll('li');
+    if (isScrollableY && listItems.length >= 5) {
       return div;
     }
   }
@@ -996,10 +1170,11 @@ const processApplication = async () => {
         await sleep(250);
       }
 
+      console.log("🔍 Looking for next applicable job...");
       const nextJob = findNextJob();
       
       if (!nextJob) {
-        console.log("No job found, attempting to scroll for more jobs");
+        console.log("🔄 No applicable job found, attempting to scroll for more jobs");
         
         // Use dynamic detection instead of hardcoded selectors
         let jobList = findScrollableJobListContainer();
@@ -1015,7 +1190,7 @@ const processApplication = async () => {
           const isAtBottom = jobList.scrollHeight - jobList.scrollTop <= jobList.clientHeight + 50;
           
           if (!isAtBottom) {
-            console.log(`Scrolling job list by ${scrollAmount}px to load more jobs (scrollTop: ${currentScrollTop}, scrollHeight: ${jobList.scrollHeight})`);
+            console.log(`📜 Scrolling job list by ${scrollAmount}px to load more jobs (scrollTop: ${currentScrollTop}, scrollHeight: ${jobList.scrollHeight})`);
             
             // Force scroll upward first to trigger LinkedIn's job loading
             jobList.scrollTo({
@@ -1033,29 +1208,41 @@ const processApplication = async () => {
             
             scrollPerformed = true;
           } else {
-            console.log("Reached bottom of job list, trying to click next page number");
+            console.log("📄 Reached bottom of job list, trying to click next page number");
             
             // We're at the bottom of the list, try to click the next page number button
             if (await clickNextPageNumber()) {
-              console.log("Successfully clicked next page number");
+              console.log("✅ Successfully clicked next page number");
               await sleep(3000); // Wait for next page to load
               continue;
             } else {
               // Fall back to the old method if page number navigation fails
-              console.log("Falling back to 'Next' button");
+              console.log("⚠️ Falling back to 'Next' button");
               const nextPageButton = document.querySelector('button[aria-label="Next"]');
               if (nextPageButton && isElementVisible(nextPageButton as HTMLElement)) {
-                console.log("Clicking next page button");
+                console.log("🖱️ Clicking next page button");
                 (nextPageButton as HTMLElement).click();
                 await sleep(3000); // Wait for next page to load
                 continue;
               } else {
-                console.log("No pagination buttons found");
+                console.log("❌ No pagination buttons found - may have reached the end of results");
+                
+                // Consider pausing automation if we've exhausted all jobs
+                let scrollAttempts = parseInt(localStorage.getItem('scrollAttempts') || '0');
+                scrollAttempts++;
+                localStorage.setItem('scrollAttempts', scrollAttempts.toString());
+                
+                // If we've tried scrolling multiple times with no jobs, pause briefly
+                if (scrollAttempts > 5) {
+                  console.log("🛑 Multiple scroll attempts with no jobs found. Pausing automation briefly.");
+                  localStorage.setItem('scrollAttempts', '0');
+                  await sleep(10000); // Longer pause to allow user to intervene if needed
+                }
               }
             }
           }
         } else {
-          console.log("Could not find the job list element, trying direct window scroll");
+          console.log("❓ Could not find the job list element, trying direct window scroll");
           
           // If we couldn't find the job list, try scrolling the window directly
           window.scrollBy({
@@ -1073,12 +1260,12 @@ const processApplication = async () => {
           // Check if scrolling loaded any new jobs
           const newNextJob = findNextJob();
           if (newNextJob) {
-            console.log("Found new job after scrolling");
+            console.log("✅ Found new job after scrolling");
             continue; // Skip to next iteration to process this job
           }
         }
         
-        console.log("Waiting before next job check");
+        console.log("⏱️ Waiting briefly before next job check");
         await sleep(2000); // Only 2 seconds wait when no jobs found
         continue;
       }
@@ -1296,7 +1483,33 @@ const stopAutomation = () => {
 };
 
 const initializeState = async () => {
+  console.log("Initializing content script state");
+  
+  // First, ensure Supabase authentication is properly restored
+  const authResult = await ensureAuthenticated();
+  console.log("Authentication initialization result:", authResult);
+  
+  // Then initialize the client and try to refresh the session
+  await initSupabaseClient();
+  
+  // Check if we can actually get a session
+  const session = await getSession();
+  if (session) {
+    console.log("✅ Successfully authenticated with Supabase");
+    
+    // Check if we have a valid user
+    const user = await getCurrentUser();
+    if (user) {
+      console.log(`✅ Current user: ${user.email}`);
+    } else {
+      console.warn("⚠️ No user found despite having a session");
+    }
+  } else {
+    console.warn("⚠️ No valid session available - database operations may fail");
+  }
+  
   chrome.storage.local.get(['isAutomationRunning', 'userData', 'appliedJobIds', 'skipped409Jobs'], (result) => {
+    console.log("Loaded data from storage:", result);
     // Load persisted applied job IDs into memory
     if (result.appliedJobIds && Array.isArray(result.appliedJobIds)) {
       result.appliedJobIds.forEach(id => appliedJobIds.add(id));
@@ -1319,34 +1532,60 @@ const initializeState = async () => {
   });
 };
 
-// Message listener
+// Update message listener with more debugging
 chrome.runtime.onMessage.addListener((message: MessageType, sender, sendResponse: (response: ResponseType) => void) => {
-  switch (message.type) {
-    case 'START_AUTOMATION':
-      if (message.settings) {
-        userData = {
-          ...userData,
-          settings: {
-            ...userData?.settings,
-            nextJobDelay: message.settings.nextJobDelay
+  console.log("Content script received message:", message);
+  console.log("Content script sender:", sender);
+  
+  try {
+    switch (message.type) {
+      case 'START_AUTOMATION':
+        console.log("Handling START_AUTOMATION message");
+        if (message.settings) {
+          userData = {
+            ...userData,
+            settings: {
+              ...userData?.settings,
+              nextJobDelay: message.settings.nextJobDelay
+            }
+          };
+        }
+        startAutomation();
+        sendResponse({ isRunning: true });
+        break;
+        
+      case 'STOP_AUTOMATION':
+        console.log("Handling STOP_AUTOMATION message");
+        stopAutomation();
+        sendResponse({ isRunning: false });
+        break;
+        
+      case 'GET_STATE':
+        console.log("Handling GET_STATE message");
+        sendResponse({ isRunning });
+        break;
+        
+      case 'AUTOFILL_CURRENT_PAGE':
+        console.log("Handling AUTOFILL_CURRENT_PAGE message", message.data);
+        try {
+          if (!message.data) {
+            throw new Error("No user data provided for autofill");
           }
-        };
-      }
-      startAutomation();
-      sendResponse({ isRunning: true });
-      break;
-      
-    case 'STOP_AUTOMATION':
-      stopAutomation();
-      sendResponse({ isRunning: false });
-      break;
-      
-    case 'GET_STATE':
-      sendResponse({ isRunning });
-      break;
-      
-    default:
-      sendResponse({ isRunning });
+          autofillRouter(message.data);
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("Error during autofill:", error);
+          sendResponse({ success: false, error: (error as Error).message });
+        }
+        break;
+        
+      default:
+        console.log("Received unknown message type:", message.type);
+        sendResponse({ isRunning });
+    }
+  } catch (e) {
+    console.error("Error processing message:", e);
+    sendResponse({ error: (e as Error).message });
   }
   
   return true;

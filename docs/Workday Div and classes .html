@@ -1,0 +1,148 @@
+Field: How Did You Hear About Us?
+
+Label Text: How Did You Hear About Us?
+
+Component Type: Searchable multi-select dropdown (custom React component)
+
+Input Selector: input#source--source
+
+Option Selector: div[data-automation-label="Workday.com"]
+
+Value to Enter: Website → Workday.com
+Autofill Steps:
+Focus on #source--source
+Type Website
+Wait for options to populate (use setTimeout or observer)
+Find and click on data-automation-label="Workday.com"
+Dispatch input, change, and optionally keydown with "Enter"
+
+Event Dispatching Required:
+input
+change
+keydown (Enter)
+
+
+
+<div data-automation-id="formField-source" data-fkit-id="source--source" class="css-7t35fz"><label for="source--source"
+    class="css-1ud5i8o"><span>How Did You Hear About Us?<abbr aria-hidden="true"
+        class="css-1fc83zd">*</abbr></span></label>
+  <div class="css-15rz5ap">
+    <div>
+      <div class="css-1sw7cgs">
+        <div dir="ltr" tabindex="-1" data-automation-id="multiSelectContainer" id="f13ea6bc-4302-4eb3-b506-33d3f6471b34"
+          data-uxi-element-id="f13ea6bc-4302-4eb3-b506-33d3f6471b34" data-uxi-widget-type="multiselect"
+          class="css-dapbss">
+          <div data-automation-id="multiselectInputContainer" dir="ltr" color="#0875E1" class="css-1j0rjec">
+            <div data-automation-hiddensearch="false" class="css-ujzx5o"><input dir="ltr" placeholder="Search"
+                aria-invalid="false" aria-describedby="50038164-1aaa-4e53-8f6c-d5ef75ceaf2e" aria-disabled="false"
+                aria-required="true" autocomplete="off" tabindex="0"
+                data-uxi-element-id="selectinput-f13ea6bc-4302-4eb3-b506-33d3f6471b34"
+                data-uxi-widget-type="selectinput" data-uxi-multiselect-id="f13ea6bc-4302-4eb3-b506-33d3f6471b34"
+                id="source--source" class="css-1jafa2r" value="">
+              <div data-automation-id="promptSelectionLabel" class="css-6nc22j"></div>
+              <div id="50038164-1aaa-4e53-8f6c-d5ef75ceaf2e" aria-hidden="true"
+                data-automation-id="promptAriaInstruction" class="css-6nc22j">0 items selected</div>
+            </div><span class="css-1b09aku" data-automation-id="promptIcon"
+              data-uxi-element-id="promptIcon-f13ea6bc-4302-4eb3-b506-33d3f6471b34"
+              data-uxi-widget-type="selectinputicon" data-uxi-multiselect-id="f13ea6bc-4302-4eb3-b506-33d3f6471b34"
+              data-uxi-selectinputicon-type="promptIcon" aria-hidden="true" aria-invalid="false" tabindex="-2"><svg
+                xmlns="http://www.w3.org/2000/svg" width="24" height="24" class="wd-icon-prompts wd-icon"
+                focusable="false" role="presentation" viewBox="0 0 24 24">
+                <g fill-rule="evenodd" class="wd-icon-container">
+                  <path
+                    d="M4 6.505C4 6.226 4.214 6 4.505 6h.99c.279 0 .505.214.505.505v.99A.497.497 0 0 1 5.495 8h-.99A.497.497 0 0 1 4 7.495v-.99zm0 5c0-.279.214-.505.505-.505h.99c.279 0 .505.214.505.505v.99a.497.497 0 0 1-.505.505h-.99A.497.497 0 0 1 4 12.495v-.99zm0 5c0-.279.214-.505.505-.505h.99c.279 0 .505.214.505.505v.99a.497.497 0 0 1-.505.505h-.99A.497.497 0 0 1 4 17.495v-.99zm4-10C8 6.226 8.229 6 8.5 6h11c.276 0 .5.214.5.505v.99a.506.506 0 0 1-.5.505h-11a.495.495 0 0 1-.5-.505v-.99zm0 5c0-.279.229-.505.5-.505h11c.276 0 .5.214.5.505v.99a.506.506 0 0 1-.5.505h-11a.495.495 0 0 1-.5-.505v-.99zm0 5c0-.279.229-.505.5-.505h11c.276 0 .5.214.5.505v.99a.506.506 0 0 1-.5.505h-11a.495.495 0 0 1-.5-.505v-.99z"
+                    class="wd-icon-fill"></path>
+                </g>
+              </svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div></div>
+  </div>
+</div>
+
+Field: Previously Worked for Workday?
+
+Label Text: Have you previously worked for or are you currently working for Workday as an employee or contractor?
+
+Component Type: Radio button group
+
+Radio Input Name: candidateIsPreviousWorker
+
+Option Values:
+
+value="true" for "Yes"
+
+value="false" for "No"
+
+Yes Option ID: #dha73
+
+No Option ID: #dha74
+
+Preferred Autofill Value: "No" → Select radio with id="dha74"
+
+Autofill Steps:
+
+Find the input with name="candidateIsPreviousWorker" and value="false"
+
+Click the corresponding input element (#dha74)
+
+Optionally dispatch click, change, and input events
+
+<fieldset class="css-1s9yhc">
+  <legend><label id="radio-label1" class="css-1ud5i8o"><span>Have you previously worked for or are you currently working
+        for Workday as an employee or contractor?<abbr aria-hidden="true" class="css-1fc83zd">*</abbr></span></label>
+  </legend>
+  <div class="css-15rz5ap">
+    <div style="width: 100%; max-width: 344px; min-width: 280px;">
+      <div name="candidateIsPreviousWorker" aria-labelledby="radio-label1"
+        id="previousWorker--candidateIsPreviousWorker" aria-required="true" class="css-1ozzhrb">
+        <div class="css-1utp272">
+          <div class="css-n9nn59"><input id="dha73" name="candidateIsPreviousWorker" type="radio" aria-checked="false"
+              class="css-33rnk7" value="true"><span class="css-15ws53q"></span>
+            <div class="css-1mlv8uo">
+              <div class="css-1yykikq"></div>
+            </div>
+          </div><label cursor="default" for="dha73" class="css-1ifmyht">Yes</label>
+        </div>
+        <div class="css-1utp272">
+          <div class="css-n9nn59"><input id="dha74" name="candidateIsPreviousWorker" type="radio" aria-checked="false"
+              class="css-33rnk7" value="false"><span class="css-15ws53q"></span>
+            <div class="css-1mlv8uo">
+              <div class="css-1yykikq"></div>
+            </div>
+          </div><label cursor="default" for="dha74" class="css-1ifmyht">No</label>
+        </div>
+      </div>
+    </div>
+    <div style="width: 100%; max-width: 344px; min-width: 280px;"></div>
+  </div>
+</fieldset>
+
+Below field is for Country / Territory and if that dosent exist in the databse then give me the SQL query to insert the country in the database. also make sure its in 
+SQL Query format
+
+
+<div data-automation-id="formField-country" data-fkit-id="country--country" class="css-7t35fz"><label
+    for="country--country" class="css-1ud5i8o"><span>Country / Territory<abbr aria-hidden="true"
+        class="css-1fc83zd">*</abbr></span></label>
+  <div class="css-15rz5ap">
+    <div style="width: 100%; max-width: 344px; min-width: 280px;">
+      <div class="css-12zup1l"><button aria-haspopup="listbox" type="button" value="bc33aa3152ec42d4995f4791a106ed09"
+          aria-label="Country / Territory United States of America Required" name="country" id="country--country"
+          class="css-5bqb1n">United States of America</button><input type="text" class="css-77hcv"
+          value="bc33aa3152ec42d4995f4791a106ed09"><span class="menu-icon css-gvnnq4"><svg
+            xmlns="http://www.w3.org/2000/svg" width="24" height="24" class="wd-icon-caret-down-small wd-icon"
+            focusable="false" role="presentation" viewBox="0 0 24 24">
+            <g fill-rule="evenodd" class="wd-icon-container">
+              <path
+                d="M12.288 15.866c.117.18.31.177.424 0l4.235-6.538c.116-.18.034-.328-.176-.328H8.229c-.214 0-.29.15-.176.328l4.235 6.538z"
+                class="wd-icon-fill"></path>
+            </g>
+          </svg></span></div>
+    </div>
+    <div style="width: 100%; max-width: 344px; min-width: 280px;"></div>
+  </div>
+</div>
+

@@ -656,12 +656,44 @@ const Popup: React.FC = () => {
         </Tabs>
 
         {activeTab === 'automation' ? (
-          <Button 
-            onClick={handleStartStop}
-            isRunning={isRunning}
-          >
-            {isRunning ? 'Stop Automation' : 'Start Automation'}
-          </Button>
+          <>
+            <Button 
+              onClick={handleStartStop}
+              isRunning={isRunning}
+            >
+              {isRunning ? 'Stop Automation' : 'Start Automation'}
+            </Button>
+            
+            <Button 
+              onClick={() => {
+                console.log("Autofill button clicked");
+                console.log("User data:", userData);
+                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                  console.log("Current tab:", tabs[0]);
+                  if (tabs[0]?.id) {
+                    console.log("Sending autofill message to tab:", tabs[0].id);
+                    chrome.tabs.sendMessage(
+                      tabs[0].id, 
+                      {
+                        type: "AUTOFILL_CURRENT_PAGE",
+                        data: userData
+                      },
+                      (response) => {
+                        console.log("Autofill response:", response);
+                        if (chrome.runtime.lastError) {
+                          console.error("Chrome runtime error:", chrome.runtime.lastError);
+                        }
+                      }
+                    );
+                  } else {
+                    console.error("No active tab found");
+                  }
+                });
+              }}
+            >
+              Autofill This Page
+            </Button>
+          </>
         ) : activeTab === 'profile' ? (
           <ProfileTab profile={userData} />
         ) : (

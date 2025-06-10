@@ -45557,7 +45557,7 @@ exports["default"] = SignIn;
 
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.signOut = exports.signIn = exports.supabase = void 0;
+exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.ensureAuthenticated = exports.signOut = exports.signIn = exports.supabase = void 0;
 const supabase_js_1 = __webpack_require__(/*! @supabase/supabase-js */ "./node_modules/@supabase/supabase-js/dist/module/index.js");
 const supabaseUrl = 'https://tedelpcjgknjnlhezsdo.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlZGVscGNqZ2tuam5saGV6c2RvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA5MTU4ODUsImV4cCI6MjA1NjQ5MTg4NX0.TUfoy4jG2t9YzniUbd-GnHGHYW6k4NY4yeUiBzyCYqw';
@@ -45637,6 +45637,7 @@ const ensureAuthenticated = async () => {
         return false;
     }
 };
+exports.ensureAuthenticated = ensureAuthenticated;
 const getSession = async () => {
     try {
         // Assume authentication is valid without continuously checking
@@ -45664,14 +45665,26 @@ const trackJobApplication = async (position, company, additionalData) => {
     try {
         const session = await (0, exports.getSession)();
         if (!session) {
-            console.log('❌ No session found, cannot track job application');
-            return false;
+            console.log('❌ No session found, cannot track job application. Attempting to re-authenticate...');
+            const authResult = await (0, exports.ensureAuthenticated)();
+            if (!authResult) {
+                console.log('❌ Re-authentication failed');
+                return false;
+            }
+            // Get the session again after re-authentication
+            const newSession = await (0, exports.getSession)();
+            if (!newSession) {
+                console.log('❌ Still no session after re-authentication');
+                return false;
+            }
+            console.log('✅ Re-authentication successful');
         }
         const user = await (0, exports.getCurrentUser)();
         if (!user) {
             console.log('❌ No user found, cannot track job application');
             return false;
         }
+        console.log('✅ User authenticated: ', user.id);
         // Sanitize inputs to prevent issues
         const sanitizedPosition = position?.substring(0, 255) || 'Unknown Position';
         const sanitizedCompany = company?.substring(0, 255) || 'Unknown Company';
@@ -45700,32 +45713,44 @@ const trackJobApplication = async (position, company, additionalData) => {
             linkedin_job_id: uniqueId,
             application_type: 'easy_apply'
         };
-        console.log('🔄 [DB] Inserting application');
+        console.log('🔄 [DB] Inserting application data:', {
+            position: sanitizedPosition,
+            company: sanitizedCompany,
+            linkedin_job_id: uniqueId
+        });
+        // First check if this job already exists in the database
+        const { data: existingData, error: checkError } = await exports.supabase
+            .from('applications')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('linkedin_job_id', uniqueId)
+            .limit(1);
+        if (checkError) {
+            console.log(`⚠️ Error checking for existing application: ${checkError.message}`);
+        }
+        else if (existingData && existingData.length > 0) {
+            console.log('✅ Job already exists in database, no need to insert again');
+            return true;
+        }
         // Use direct insert first for performance
         const { error: insertError } = await exports.supabase
             .from('applications')
             .insert([applicationData]);
         // If insert fails, try update using upsert
         if (insertError) {
-            if (insertError.code === '23505') {
-                // Unique constraint violation - this is expected sometimes, handle quietly with upsert
-                const { error: upsertError } = await exports.supabase
-                    .from('applications')
-                    .upsert([applicationData], {
-                    onConflict: 'user_id,linkedin_job_id',
-                    ignoreDuplicates: false
-                });
-                if (upsertError) {
-                    console.error('❌ Failed to track job application:', upsertError);
-                    return false;
-                }
-                console.log(`✅ Application upserted (duplicate avoided): ${sanitizedPosition} at ${sanitizedCompany}`);
-            }
-            else {
-                // Some other error occurred
-                console.error('❌ Insert failed:', insertError);
+            console.log(`⚠️ Insert failed (${insertError.code}): ${insertError.message}, trying upsert`);
+            // Use upsert with onConflict for reliability
+            const { error: upsertError } = await exports.supabase
+                .from('applications')
+                .upsert([applicationData], {
+                onConflict: 'user_id,linkedin_job_id',
+                ignoreDuplicates: false
+            });
+            if (upsertError) {
+                console.error('❌ Failed to track job application:', upsertError.message, upsertError);
                 return false;
             }
+            console.log(`✅ Application upserted (duplicate avoided): ${sanitizedPosition} at ${sanitizedCompany}`);
         }
         else {
             console.log(`✅ Application inserted: ${sanitizedPosition} at ${sanitizedCompany}`);
@@ -46458,7 +46483,30 @@ const Popup = () => {
                 react_1.default.createElement(Tab, { active: activeTab === 'automation', onClick: () => setActiveTab('automation') }, "Automation"),
                 react_1.default.createElement(Tab, { active: activeTab === 'profile', onClick: () => setActiveTab('profile') }, "Profile"),
                 react_1.default.createElement(Tab, { active: activeTab === 'settings', onClick: () => setActiveTab('settings') }, "Settings")),
-            activeTab === 'automation' ? (react_1.default.createElement(Button, { onClick: handleStartStop, isRunning: isRunning }, isRunning ? 'Stop Automation' : 'Start Automation')) : activeTab === 'profile' ? (react_1.default.createElement(ProfileTab_1.default, { profile: userData })) : (react_1.default.createElement(Form, null,
+            activeTab === 'automation' ? (react_1.default.createElement(react_1.default.Fragment, null,
+                react_1.default.createElement(Button, { onClick: handleStartStop, isRunning: isRunning }, isRunning ? 'Stop Automation' : 'Start Automation'),
+                react_1.default.createElement(Button, { onClick: () => {
+                        console.log("Autofill button clicked");
+                        console.log("User data:", userData);
+                        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                            console.log("Current tab:", tabs[0]);
+                            if (tabs[0]?.id) {
+                                console.log("Sending autofill message to tab:", tabs[0].id);
+                                chrome.tabs.sendMessage(tabs[0].id, {
+                                    type: "AUTOFILL_CURRENT_PAGE",
+                                    data: userData
+                                }, (response) => {
+                                    console.log("Autofill response:", response);
+                                    if (chrome.runtime.lastError) {
+                                        console.error("Chrome runtime error:", chrome.runtime.lastError);
+                                    }
+                                });
+                            }
+                            else {
+                                console.error("No active tab found");
+                            }
+                        });
+                    } }, "Autofill This Page"))) : activeTab === 'profile' ? (react_1.default.createElement(ProfileTab_1.default, { profile: userData })) : (react_1.default.createElement(Form, null,
                 react_1.default.createElement(FormGroup, null,
                     react_1.default.createElement(Label, null, "Delay between jobs (seconds)"),
                     react_1.default.createElement(Input, { type: "number", min: "1", max: "30", value: delay, onChange: (e) => {

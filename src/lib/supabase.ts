@@ -123,10 +123,16 @@ export const trackJobApplication = async (position: string, company: string, add
   linkedin_job_id?: string;
 }) => {
   try {
+    console.log('🔍 [DEBUG] trackJobApplication called with:', { position, company, linkedin_job_id: additionalData?.linkedin_job_id });
+    
     const session = await getSession();
+    console.log('🔍 [DEBUG] Session check result:', !!session);
+    
     if (!session) {
       console.log('❌ No session found, cannot track job application. Attempting to re-authenticate...');
       const authResult = await ensureAuthenticated();
+      console.log('🔍 [DEBUG] ensureAuthenticated result:', authResult);
+      
       if (!authResult) {
         console.log('❌ Re-authentication failed');
         return false;
@@ -134,6 +140,8 @@ export const trackJobApplication = async (position: string, company: string, add
       
       // Get the session again after re-authentication
       const newSession = await getSession();
+      console.log('🔍 [DEBUG] New session after re-auth:', !!newSession);
+      
       if (!newSession) {
         console.log('❌ Still no session after re-authentication');
         return false;
@@ -142,6 +150,8 @@ export const trackJobApplication = async (position: string, company: string, add
     }
 
     const user = await getCurrentUser();
+    console.log('🔍 [DEBUG] getCurrentUser result:', !!user, user?.id);
+    
     if (!user) {
       console.log('❌ No user found, cannot track job application');
       return false;
@@ -183,10 +193,12 @@ export const trackJobApplication = async (position: string, company: string, add
     console.log('🔄 [DB] Inserting application data:', {
       position: sanitizedPosition,
       company: sanitizedCompany, 
-      linkedin_job_id: uniqueId
+      linkedin_job_id: uniqueId,
+      user_id: user.id
     });
     
     // First check if this job already exists in the database
+    console.log('🔍 [DEBUG] Checking for existing application...');
     const { data: existingData, error: checkError } = await supabase
       .from('applications')
       .select('id')
@@ -194,39 +206,42 @@ export const trackJobApplication = async (position: string, company: string, add
       .eq('linkedin_job_id', uniqueId)
       .limit(1);
       
+    console.log('🔍 [DEBUG] Existing check result:', { 
+      hasError: !!checkError, 
+      errorMessage: checkError?.message, 
+      existingCount: existingData?.length || 0 
+    });
+      
     if (checkError) {
       console.log(`⚠️ Error checking for existing application: ${checkError.message}`);
+      console.log('🔍 [DEBUG] Full check error:', checkError);
     } else if (existingData && existingData.length > 0) {
       console.log('✅ Job already exists in database, no need to insert again');
       return true;
     }
     
-    // Use direct insert first for performance
-    const { error: insertError } = await supabase
+    // Use upsert directly to handle duplicates gracefully
+    console.log('🔍 [DEBUG] Attempting database upsert...');
+    const { error: upsertError } = await supabase
       .from('applications')
-      .insert([applicationData]);
+      .upsert([applicationData], {
+        onConflict: 'user_id,linkedin_job_id',
+        ignoreDuplicates: false
+      });
     
-    // If insert fails, try update using upsert
-    if (insertError) {
-      console.log(`⚠️ Insert failed (${insertError.code}): ${insertError.message}, trying upsert`);
-      
-      // Use upsert with onConflict for reliability
-      const { error: upsertError } = await supabase
-        .from('applications')
-        .upsert([applicationData], {
-          onConflict: 'user_id,linkedin_job_id',
-          ignoreDuplicates: false
-        });
-      
-      if (upsertError) {
-        console.error('❌ Failed to track job application:', upsertError.message, upsertError);
-        return false;
-      }
-      
-      console.log(`✅ Application upserted (duplicate avoided): ${sanitizedPosition} at ${sanitizedCompany}`);
-    } else {
-      console.log(`✅ Application inserted: ${sanitizedPosition} at ${sanitizedCompany}`);
+    console.log('🔍 [DEBUG] Upsert result:', { 
+      hasError: !!upsertError, 
+      errorCode: upsertError?.code, 
+      errorMessage: upsertError?.message 
+    });
+    
+    if (upsertError) {
+      console.error('❌ Failed to track job application:', upsertError.message, upsertError);
+      console.log('🔍 [DEBUG] Full upsert error:', upsertError);
+      return false;
     }
+    
+    console.log(`✅ Application upserted: ${sanitizedPosition} at ${sanitizedCompany}`);
     
     return true;
   } catch (error) {

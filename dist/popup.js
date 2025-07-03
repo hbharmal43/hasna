@@ -45557,7 +45557,7 @@ exports["default"] = SignIn;
 
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.ensureAuthenticated = exports.signOut = exports.signIn = exports.supabase = void 0;
+exports.transformCompleteProfileToUserProfile = exports.getCompleteProfile = exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.ensureAuthenticated = exports.signOut = exports.signIn = exports.supabase = void 0;
 const supabase_js_1 = __webpack_require__(/*! @supabase/supabase-js */ "./node_modules/@supabase/supabase-js/dist/module/index.js");
 const supabaseUrl = 'https://tedelpcjgknjnlhezsdo.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlZGVscGNqZ2tuam5saGV6c2RvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA5MTU4ODUsImV4cCI6MjA1NjQ5MTg4NX0.TUfoy4jG2t9YzniUbd-GnHGHYW6k4NY4yeUiBzyCYqw';
@@ -45868,6 +45868,169 @@ const getUserProfile = async () => {
     }
 };
 exports.getUserProfile = getUserProfile;
+/**
+ * Get complete profile data using the database RPC function
+ * Returns profile with all normalized tables (work_experiences, education, skills, etc.)
+ */
+const getCompleteProfile = async () => {
+    try {
+        console.log('🔍 [DEBUG] getCompleteProfile called');
+        const user = await (0, exports.getCurrentUser)();
+        if (!user) {
+            console.log('❌ No user found, cannot get complete profile');
+            return null;
+        }
+        console.log('✅ User authenticated:', user.id);
+        // Call the database RPC function
+        const { data, error } = await exports.supabase
+            .rpc('get_complete_profile', { user_id: user.id });
+        if (error) {
+            console.error('❌ Error calling get_complete_profile RPC:', error.message);
+            console.log('🔍 [DEBUG] Full RPC error:', error);
+            return null;
+        }
+        if (!data) {
+            console.log('⚠️ No profile data returned from RPC');
+            return null;
+        }
+        console.log('✅ Complete profile data retrieved successfully');
+        console.log('🔍 [DEBUG] Profile data structure:', {
+            hasProfile: !!data.profile,
+            workExperiencesCount: data.work_experiences?.length || 0,
+            educationCount: data.education?.length || 0,
+            skillsCount: data.skills?.length || 0,
+            languagesCount: data.languages?.length || 0,
+            certificationsCount: data.certifications?.length || 0,
+            portfolioLinksCount: data.portfolio_links?.length || 0
+        });
+        return data;
+    }
+    catch (error) {
+        console.error('❌ Exception getting complete profile:', error);
+        return null;
+    }
+};
+exports.getCompleteProfile = getCompleteProfile;
+/**
+ * Transform CompleteProfile data into UserProfile format for autofill engine
+ */
+const transformCompleteProfileToUserProfile = (completeProfile) => {
+    const profile = completeProfile.profile;
+    // Transform work experiences to old format
+    const experience = completeProfile.work_experiences?.map(work => ({
+        id: work.id,
+        title: work.position_title,
+        company: work.company_name,
+        location: work.location || '',
+        date: work.is_current
+            ? `${work.start_month} ${work.start_year} - Present`
+            : `${work.start_month} ${work.start_year} - ${work.end_month} ${work.end_year}`,
+        description: work.description || ''
+    })) || [];
+    // Transform education to old format
+    const education = completeProfile.education?.map(edu => ({
+        degree: edu.degree_type || '',
+        school: edu.institution_name,
+        date: edu.is_current
+            ? `${edu.start_year} - Present`
+            : `${edu.start_year} - ${edu.end_year}`,
+        description: edu.description || ''
+    })) || [];
+    // Transform skills to array of strings
+    const skills = completeProfile.skills?.map(skill => skill.skill_name) || [];
+    // Transform languages to array of strings
+    const languages = completeProfile.languages?.map(lang => lang.language_name) || [];
+    // Transform portfolio links to socials object
+    const socials = {};
+    completeProfile.portfolio_links?.forEach(link => {
+        socials[link.platform] = link.url;
+    });
+    return {
+        id: profile.id,
+        full_name: profile.full_name || '',
+        first_name: profile.first_name || '',
+        last_name: profile.last_name || '',
+        title: profile.title || '',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        location: `${profile.city || ''}, ${profile.state || ''}`.replace(/^,\s*|,\s*$/g, '') || '',
+        // Address fields
+        address: profile.address_line_1 || '',
+        address_line_1: profile.address_line_1,
+        address_line_2: profile.address_line_2,
+        city: profile.city || '',
+        state: profile.state || '',
+        zip_code: profile.postal_code || '',
+        postal_code: profile.postal_code,
+        country: profile.country || '',
+        county: profile.county,
+        // Contact details
+        phone_device_type: profile.phone_device_type,
+        country_phone_code: profile.country_phone_code,
+        phone_extension: profile.phone_extension,
+        bio: profile.bio || '',
+        // Transform normalized data to old format
+        education,
+        experience,
+        skills,
+        languages,
+        socials,
+        // URLs and documents
+        linkedin_url: profile.linkedin_url,
+        website_url: profile.personal_website,
+        resume_url: profile.resume_url,
+        resume_filename: profile.resume_filename,
+        cover_letter_url: profile.cover_letter_url,
+        cover_letter_filename: profile.cover_letter_filename,
+        github_url: profile.github_url,
+        personal_website: profile.personal_website,
+        avatar_url: profile.avatar_url,
+        // Work authorization
+        work_authorization_status: profile.work_authorization_status,
+        visa_sponsorship_required: profile.visa_sponsorship_required,
+        work_authorization_us: profile.work_authorization_us,
+        work_authorization_canada: profile.work_authorization_canada,
+        work_authorization_uk: profile.work_authorization_uk,
+        // Application preferences
+        how_did_you_hear_about_us: profile.how_did_you_hear_about_us,
+        previously_worked_for_workday: profile.previously_worked_for_workday,
+        salary_expectation: profile.salary_expectation,
+        available_start_date: profile.available_start_date,
+        willing_to_relocate: profile.willing_to_relocate,
+        years_of_experience: profile.years_of_experience,
+        highest_education_level: profile.highest_education_level,
+        education_level: profile.highest_education_level,
+        // Voluntary disclosures
+        gender: profile.gender,
+        ethnicity: profile.ethnicity,
+        military_veteran: profile.military_veteran,
+        disability_status: profile.disability_status,
+        lgbtq_status: profile.lgbtq_status,
+        // Consent fields
+        references_available: profile.references_available,
+        background_check_consent: profile.background_check_consent,
+        drug_test_consent: profile.drug_test_consent,
+        // Other fields
+        birthday: profile.birthday,
+        daily_goal: profile.daily_goal || 10,
+        profile_completion_percentage: profile.profile_completion_percentage,
+        job_search_status: profile.job_search_status,
+        // Keep normalized data arrays for advanced usage
+        work_experiences: completeProfile.work_experiences,
+        education_records: completeProfile.education,
+        profile_skills: completeProfile.skills,
+        profile_languages: completeProfile.languages,
+        certifications: completeProfile.certifications,
+        portfolio_links: completeProfile.portfolio_links,
+        // Default values
+        projects: [],
+        custom_answers: {},
+        settings: {
+            nextJobDelay: 5000
+        }
+    };
+};
+exports.transformCompleteProfileToUserProfile = transformCompleteProfileToUserProfile;
 
 
 /***/ }),
@@ -46366,13 +46529,13 @@ const Popup = () => {
                 }
                 // Then fetch latest profile data from Supabase
                 try {
-                    const profileData = await (0, supabase_1.getUserProfile)();
-                    if (profileData) {
+                    const completeProfile = await (0, supabase_1.getCompleteProfile)();
+                    if (completeProfile) {
+                        const transformedProfile = (0, supabase_1.transformCompleteProfileToUserProfile)(completeProfile);
                         const updatedData = {
-                            ...defaultUserData,
-                            ...profileData,
+                            ...transformedProfile,
                             settings: {
-                                ...defaultUserData.settings,
+                                ...transformedProfile.settings,
                                 nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
                             }
                         };
@@ -46381,6 +46544,7 @@ const Popup = () => {
                     }
                 }
                 catch (error) {
+                    console.error('Error fetching profile data:', error);
                 }
             });
         };
@@ -46495,24 +46659,33 @@ const Popup = () => {
             activeTab === 'automation' ? (react_1.default.createElement(react_1.default.Fragment, null,
                 react_1.default.createElement(Button, { onClick: handleStartStop, isRunning: isRunning }, isRunning ? 'Stop Automation' : 'Start Automation'),
                 react_1.default.createElement(Button, { onClick: () => {
-                        console.log("Autofill button clicked");
-                        console.log("User data:", userData);
+                        console.log("🔵 Autofill button clicked");
+                        console.log("🔵 User data:", userData);
+                        console.log("🔵 User data details:", {
+                            full_name: userData.full_name,
+                            email: userData.email,
+                            phone: userData.phone,
+                            location: userData.location,
+                            hasWorkExperience: userData.experience?.length > 0,
+                            hasEducation: userData.education?.length > 0,
+                            hasSkills: userData.skills?.length > 0
+                        });
                         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                            console.log("Current tab:", tabs[0]);
+                            console.log("🔵 Current tab:", tabs[0]);
                             if (tabs[0]?.id) {
-                                console.log("Sending autofill message to tab:", tabs[0].id);
+                                console.log("🔵 Sending autofill message to tab:", tabs[0].id);
                                 chrome.tabs.sendMessage(tabs[0].id, {
                                     type: "AUTOFILL_CURRENT_PAGE",
                                     data: userData
                                 }, (response) => {
-                                    console.log("Autofill response:", response);
+                                    console.log("🔵 Autofill response:", response);
                                     if (chrome.runtime.lastError) {
-                                        console.error("Chrome runtime error:", chrome.runtime.lastError);
+                                        console.error("🔵 Chrome runtime error:", chrome.runtime.lastError);
                                     }
                                 });
                             }
                             else {
-                                console.error("No active tab found");
+                                console.error("🔵 No active tab found");
                             }
                         });
                     } }, "Autofill This Page"))) : activeTab === 'profile' ? (react_1.default.createElement(ProfileTab_1.default, { profile: userData })) : (react_1.default.createElement(Form, null,

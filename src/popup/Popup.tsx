@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { MessageType, ResponseType, UserProfile } from '../types';
 import SignIn from '../components/SignIn';
-import { getCurrentUser, signOut, getUserProfile } from '../lib/supabase';
+import { getCurrentUser, signOut, getCompleteProfile, transformCompleteProfileToUserProfile } from '../lib/supabase';
 import ProfileTab from '../components/ProfileTab';
 
 const Container = styled.div`
@@ -487,14 +487,14 @@ const Popup: React.FC = () => {
         
         // Then fetch latest profile data from Supabase
         try {
-          const profileData = await getUserProfile();
+          const completeProfile = await getCompleteProfile();
           
-          if (profileData) {
+          if (completeProfile) {
+            const transformedProfile = transformCompleteProfileToUserProfile(completeProfile);
             const updatedData = {
-              ...defaultUserData,
-              ...profileData,
+              ...transformedProfile,
               settings: {
-                ...defaultUserData.settings,
+                ...transformedProfile.settings,
                 nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
               }
             };
@@ -503,6 +503,7 @@ const Popup: React.FC = () => {
             await chrome.storage.local.set({ userData: updatedData });
           }
         } catch (error) {
+          console.error('Error fetching profile data:', error);
         }
       });
     };
@@ -666,12 +667,21 @@ const Popup: React.FC = () => {
             
             <Button 
               onClick={() => {
-                console.log("Autofill button clicked");
-                console.log("User data:", userData);
+                console.log("🔵 Autofill button clicked");
+                console.log("🔵 User data:", userData);
+                console.log("🔵 User data details:", {
+                  full_name: userData.full_name,
+                  email: userData.email,
+                  phone: userData.phone,
+                  location: userData.location,
+                  hasWorkExperience: userData.experience?.length > 0,
+                  hasEducation: userData.education?.length > 0,
+                  hasSkills: userData.skills?.length > 0
+                });
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                  console.log("Current tab:", tabs[0]);
+                  console.log("🔵 Current tab:", tabs[0]);
                   if (tabs[0]?.id) {
-                    console.log("Sending autofill message to tab:", tabs[0].id);
+                    console.log("🔵 Sending autofill message to tab:", tabs[0].id);
                     chrome.tabs.sendMessage(
                       tabs[0].id, 
                       {
@@ -679,14 +689,14 @@ const Popup: React.FC = () => {
                         data: userData
                       },
                       (response) => {
-                        console.log("Autofill response:", response);
+                        console.log("🔵 Autofill response:", response);
                         if (chrome.runtime.lastError) {
-                          console.error("Chrome runtime error:", chrome.runtime.lastError);
+                          console.error("🔵 Chrome runtime error:", chrome.runtime.lastError);
                         }
                       }
                     );
                   } else {
-                    console.error("No active tab found");
+                    console.error("🔵 No active tab found");
                   }
                 });
               }}

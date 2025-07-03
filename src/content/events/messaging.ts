@@ -64,16 +64,18 @@ export const setupMessageListener = (deps: MessageHandlingDependencies) => {
           
         case 'AUTOFILL_CURRENT_PAGE':
           console.log("Handling AUTOFILL_CURRENT_PAGE message", message.data);
+          (async () => {
           try {
             if (!message.data) {
               throw new Error("No user data provided for autofill");
             }
-            autofillRouter(message.data);
+              await autofillRouter(message.data);
             sendResponse({ success: true });
           } catch (error) {
             console.error("Error during autofill:", error);
             sendResponse({ success: false, error: (error as Error).message });
           }
+          })();
           break;
           
         default:

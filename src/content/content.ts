@@ -2,8 +2,6 @@
 
 import { MessageType, ResponseType, SELECTORS, UserProfile } from '../types';
 import { trackJobApplication, getSession, getCurrentUser, initSupabaseClient, ensureAuthenticated } from '../lib/supabase';
-// @ts-ignore
-import { autofillRouter } from './autofillEngine';
 import { sleep, isElementVisible, clickElement, findVisibleElement, findButtonByText, clickAnyElement } from './utils';
 import { isFieldEmpty, fillInput, fillTextArea, selectOption, uploadResume, hasValidationErrors, areAllFieldsFilled, isNumericField, isChoiceField, isSalaryField, isNameField, isTextInputField, waitForUserFinishTyping, waitForFormCompletion, fillFormFields } from './forms';
 import { isJobAlreadyApplied, isEasyApplyCard, findNextJob, scrollToJob, markJobAsApplied, clickJob } from './jobs';

@@ -13,7 +13,184 @@ export interface ResponseType {
   userData?: UserProfile;
 }
 
+// Normalized table interfaces matching database schema
+export interface WorkExperienceRecord {
+  id?: string;
+  profile_id?: string;
+  company_name: string;
+  company_logo_url?: string;
+  position_title: string;
+  location?: string;
+  experience_type?: 'full-time' | 'part-time' | 'contract' | 'internship' | 'freelance';
+  start_month?: string;
+  start_year?: number;
+  end_month?: string;
+  end_year?: number;
+  is_current?: boolean;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EducationRecord {
+  id?: string;
+  profile_id?: string;
+  institution_name: string;
+  institution_logo_url?: string;
+  degree_type?: string;
+  major?: string;
+  minor?: string;
+  gpa?: number;
+  start_year?: number;
+  end_year?: number;
+  is_current?: boolean;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProfileSkill {
+  id?: string;
+  profile_id?: string;
+  skill_name: string;
+  proficiency_level?: number; // 1-5 scale
+  is_preferred?: boolean;
+  category?: string;
+  created_at?: string;
+}
+
+export interface ProfileLanguage {
+  id?: string;
+  profile_id?: string;
+  language_name: string;
+  created_at?: string;
+}
+
+export interface Certification {
+  id?: string;
+  profile_id?: string;
+  certification_name: string;
+  issuing_organization?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  credential_id?: string;
+  credential_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PortfolioLink {
+  id?: string;
+  profile_id?: string;
+  platform: string;
+  url: string;
+  display_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface JobPreference {
+  id?: string;
+  profile_id?: string;
+  values_in_role?: string[];
+  interested_roles?: string[];
+  role_specializations?: string[];
+  preferred_locations?: string[];
+  role_level?: 'internship' | 'entry_level_new_grad' | 'mid_level' | 'senior_level' | 'staff_level' | 'principal_level';
+  company_size?: '1_10' | '11_50' | '51_200' | '201_500' | '501_1000' | '1001_5000' | '5001_10000' | '10000_plus';
+  exciting_industries?: string[];
+  avoid_industries?: string[];
+  preferred_skills?: string[];
+  avoid_skills?: string[];
+  minimum_salary?: number;
+  salary_currency?: string;
+  security_clearance_required?: boolean;
+  job_search_status?: 'actively_looking' | 'open_to_opportunities' | 'not_looking';
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Complete profile data structure (matches get_complete_profile RPC function)
+export interface CompleteProfile {
+  profile: {
+    id: string;
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    title?: string;
+    phone?: string;
+    phone_device_type?: string;
+    country_phone_code?: string;
+    phone_extension?: string;
+    bio?: string;
+    
+    // Address Information
+    address_line_1?: string;
+    address_line_2?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+    county?: string;
+    
+    // Work Authorization
+    work_authorization_status?: string;
+    visa_sponsorship_required?: string;
+    work_authorization_us?: boolean;
+    work_authorization_canada?: boolean;
+    work_authorization_uk?: boolean;
+    
+    // Application Preferences
+    how_did_you_hear_about_us?: string;
+    previously_worked_for_workday?: boolean;
+    salary_expectation?: string;
+    available_start_date?: string;
+    willing_to_relocate?: boolean;
+    years_of_experience?: number;
+    highest_education_level?: string;
+    
+    // Voluntary Disclosures
+    gender?: string;
+    ethnicity?: string;
+    military_veteran?: string;
+    disability_status?: string;
+    lgbtq_status?: string;
+    
+    // Documents & Links
+    resume_url?: string;
+    resume_filename?: string;
+    cover_letter_url?: string;
+    cover_letter_filename?: string;
+    linkedin_url?: string;
+    github_url?: string;
+    personal_website?: string;
+    
+    // Consent Fields
+    references_available?: boolean;
+    background_check_consent?: boolean;
+    drug_test_consent?: boolean;
+    
+    // Other fields
+    avatar_url?: string;
+    daily_goal?: number;
+    profile_completion_percentage?: number;
+    job_search_status?: string;
+    birthday?: string;
+    created_at?: string;
+    updated_at?: string;
+  };
+  work_experiences: WorkExperienceRecord[];
+  education: EducationRecord[];
+  skills: ProfileSkill[];
+  languages: ProfileLanguage[];
+  certifications: Certification[];
+  portfolio_links: PortfolioLink[];
+}
+
+// Extended UserProfile interface (keeps existing fields for LinkedIn compatibility + adds new fields)
 export interface UserProfile {
+  // Existing fields (for LinkedIn compatibility)
   id?: string;
   full_name: string;
   first_name?: string;
@@ -62,6 +239,68 @@ export interface UserProfile {
     nextJobDelay: number;
   };
   custom_answers?: Record<string, string>;
+
+  // New fields from database schema
+  // Personal Information
+  phone_device_type?: string;
+  country_phone_code?: string;
+  phone_extension?: string;
+  
+  // Address Information (extended)
+  address_line_1?: string;
+  address_line_2?: string;
+  postal_code?: string;
+  county?: string;
+  
+  // Work Authorization
+  work_authorization_status?: string;
+  visa_sponsorship_required?: string;
+  work_authorization_us?: boolean;
+  work_authorization_canada?: boolean;
+  work_authorization_uk?: boolean;
+  
+  // Application Preferences
+  how_did_you_hear_about_us?: string;
+  previously_worked_for_workday?: boolean;
+  salary_expectation?: string;
+  available_start_date?: string;
+  willing_to_relocate?: boolean;
+  years_of_experience?: number;
+  highest_education_level?: string;
+  
+  // Voluntary Disclosures
+  gender?: string;
+  ethnicity?: string;
+  military_veteran?: string;
+  disability_status?: string;
+  lgbtq_status?: string;
+  
+  // Documents & Links (extended)
+  resume_filename?: string;
+  cover_letter_url?: string;
+  cover_letter_filename?: string;
+  github_url?: string;
+  personal_website?: string;
+  portfolio_urls?: string[];
+  
+  // Consent Fields
+  references_available?: boolean;
+  background_check_consent?: boolean;
+  drug_test_consent?: boolean;
+  
+  // Other fields
+  birthday?: string;
+  profile_completion_percentage?: number;
+  job_search_status?: string;
+  
+  // Normalized data arrays (from separate tables)
+  work_experiences?: WorkExperienceRecord[];
+  education_records?: EducationRecord[];
+  profile_skills?: ProfileSkill[];
+  profile_languages?: ProfileLanguage[];
+  certifications?: Certification[];
+  portfolio_links?: PortfolioLink[];
+  job_preferences?: JobPreference;
 }
 
 export interface JobApplication {

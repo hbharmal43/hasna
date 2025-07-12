@@ -541,4 +541,100 @@ export const transformCompleteProfileToUserProfile = (completeProfile: CompleteP
       nextJobDelay: 5000
     }
   };
+};
+
+/**
+ * Get the latest updated_at timestamps for all autofill-related tables
+ * Used for version checking to determine if local cache is stale
+ */
+export const getDataVersions = async (): Promise<{
+  profiles: string | null;
+  education: string | null;
+  work_experiences: string | null;
+  profile_skills: string | null;
+  profile_languages: string | null;
+  portfolio_links: string | null;
+} | null> => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      console.log('❌ No user found, cannot get data versions');
+      return null;
+    }
+
+    // Get the most recent updated_at timestamp for each table
+    const { data, error } = await supabase
+      .rpc('get_data_versions', { user_id: user.id });
+
+    if (error) {
+      console.error('❌ Error getting data versions:', error.message);
+      return null;
+    }
+
+    console.log('✅ Data versions retrieved:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ Exception getting data versions:', error);
+    return null;
+  }
+};
+
+/**
+ * Check if local cache is stale by comparing timestamps
+ * Returns true if fresh data should be fetched from Supabase
+ */
+export const shouldRefreshData = async (): Promise<boolean> => {
+  try {
+    // Get remote versions
+    const remoteVersions = await getDataVersions();
+    if (!remoteVersions) {
+      console.log('⚠️ Could not get remote versions, assuming refresh needed');
+      return true;
+    }
+
+    // Get cached versions from Chrome storage
+    const result = await chrome.storage.local.get(['dataVersions']);
+    const cachedVersions = result.dataVersions;
+
+    if (!cachedVersions) {
+      console.log('📝 No cached versions found, refresh needed');
+      return true;
+    }
+
+    // Compare each table's timestamp
+    const tables = ['profiles', 'education', 'work_experiences', 'profile_skills', 'profile_languages', 'portfolio_links'];
+    
+    for (const table of tables) {
+      const remoteTime = remoteVersions[table as keyof typeof remoteVersions];
+      const cachedTime = cachedVersions[table];
+      
+      if (!cachedTime || !remoteTime) {
+        console.log(`📝 Missing timestamp for ${table}, refresh needed`);
+        return true;
+      }
+      
+      if (new Date(remoteTime) > new Date(cachedTime)) {
+        console.log(`🔄 ${table} has newer data (remote: ${remoteTime}, cached: ${cachedTime}), refresh needed`);
+        return true;
+      }
+    }
+
+    console.log('✅ All data is up to date, no refresh needed');
+    return false;
+  } catch (error) {
+    console.error('❌ Error checking data freshness:', error);
+    return true; // Default to refresh on error
+  }
+};
+
+/**
+ * Save data versions to Chrome storage after successful data fetch
+ */
+export const saveDataVersions = async (versions: any): Promise<void> => {
+  try {
+    await chrome.storage.local.set({ dataVersions: versions });
+    console.log('✅ Data versions saved to cache');
+  } catch (error) {
+    console.error('❌ Error saving data versions:', error);
+  }
 }; 

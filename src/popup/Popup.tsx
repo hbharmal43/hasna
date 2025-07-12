@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { MessageType, ResponseType, UserProfile } from '../types';
 import SignIn from '../components/SignIn';
-import { getCurrentUser, signOut, getCompleteProfile, transformCompleteProfileToUserProfile } from '../lib/supabase';
+import { getCurrentUser, signOut, getCompleteProfile, transformCompleteProfileToUserProfile, shouldRefreshData, saveDataVersions, getDataVersions } from '../lib/supabase';
 import ProfileTab from '../components/ProfileTab';
 
 const Container = styled.div`
@@ -463,6 +463,23 @@ const Popup: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'automation' | 'profile' | 'settings'>('automation');
   const [userData, setUserData] = useState<UserProfile>(defaultUserData);
   const [delay, setDelay] = useState(5);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  
+  // Helper function to format last synced time
+  const formatLastSynced = (timestamp: string | null) => {
+    if (!timestamp) return 'Never';
+    const now = new Date();
+    const synced = new Date(timestamp);
+    const diffMs = now.getTime() - synced.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+  };
 
   useEffect(() => {
     const initializeData = async () => {
@@ -483,27 +500,123 @@ const Popup: React.FC = () => {
             const savedDelay = Math.floor(result.userData.settings.nextJobDelay / 1000);
             setDelay(savedDelay);
           }
+          // Set the last synced time from cached data
+          if (result.userData.lastSyncedAt) {
+            setLastSyncedAt(result.userData.lastSyncedAt);
+          }
         }
         
-        // Then fetch latest profile data from Supabase
+        // 🚀 DYNAMIC SYNC: Check if fresh data is needed
         try {
-          const completeProfile = await getCompleteProfile();
+          console.log('🔍 Checking if data refresh is needed...');
+          const needsRefresh = await shouldRefreshData();
           
-          if (completeProfile) {
-            const transformedProfile = transformCompleteProfileToUserProfile(completeProfile);
+          if (needsRefresh) {
+            console.log('🔄 Fresh data needed, fetching from Supabase...');
+            console.log('📊 Sync reason: Remote data is newer than cached data');
+            
+            const completeProfile = await getCompleteProfile();
+          
+            if (completeProfile) {
+              // Get the latest data versions for caching
+              const dataVersions = await getDataVersions();
+              
+              // 🔍 CRITICAL FIX: Clear old cache before setting new data
+              console.log('🔄 Clearing old userData cache...');
+              await chrome.storage.local.remove("userData");
+              
+              // 🔍 CRITICAL FIX: Don't transform - use raw complete profile data
             const updatedData = {
-              ...transformedProfile,
+                ...completeProfile.profile, // Use raw profile data
+                // Keep the normalized arrays for autofill
+                work_experiences: completeProfile.work_experiences || [],
+                education_records: completeProfile.education || [], // Raw education data
+                profile_skills: completeProfile.skills || [],
+                profile_languages: completeProfile.languages || [],
+                certifications: completeProfile.certifications || [],
+                portfolio_links: completeProfile.portfolio_links || [],
+                // Required UserProfile fields (keep legacy format for compatibility)
+                location: `${completeProfile.profile.city || ''}, ${completeProfile.profile.state || ''}`.replace(/^,\s*|,\s*$/g, '') || '',
+                education: [], // Legacy format (empty for now)
+                experience: [], // Legacy format (empty for now)
+                skills: completeProfile.skills?.map(skill => skill.skill_name) || [],
+                languages: completeProfile.languages?.map(lang => lang.language_name) || [],
+                projects: [],
+                custom_answers: {},
+                socials: {},
+                // Settings
               settings: {
-                ...transformedProfile.settings,
                 nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
-              }
-            };
+                },
+                // Add sync metadata
+                lastSyncedAt: new Date().toISOString()
+              } as UserProfile;
+              
+              console.log('✅ Setting fresh userData with raw Supabase data');
+              console.log('🔍 DEBUG - Fresh education data:', updatedData.education_records);
             
             setUserData(updatedData);
             await chrome.storage.local.set({ userData: updatedData });
+              
+              // Save the data versions for future comparison
+              if (dataVersions) {
+                await saveDataVersions(dataVersions);
+              }
+              
+              // Update sync status
+              setLastSyncedAt(updatedData.lastSyncedAt);
+              
+              console.log('✅ Data successfully synced and cached');
+            }
+          } else {
+            console.log('💾 Used cached data - all timestamps are current');
+            console.log('📊 Sync reason: Local cache is up to date');
+            // Use existing cached data - no API call needed
           }
         } catch (error) {
-          console.error('Error fetching profile data:', error);
+          console.error('❌ Error during data sync:', error);
+          console.log('🔄 Fallback: Attempting direct fetch from Supabase');
+          
+          // Fallback: try to get data anyway
+          try {
+            const completeProfile = await getCompleteProfile();
+            if (completeProfile) {
+              console.log('✅ Fallback successful: fetched data despite sync error');
+              console.log('📊 Sync reason: Fallback after version check failure');
+              
+              // Use the same data setting logic as above (simplified)
+              const updatedData = {
+                ...completeProfile.profile,
+                work_experiences: completeProfile.work_experiences || [],
+                education_records: completeProfile.education || [],
+                profile_skills: completeProfile.skills || [],
+                profile_languages: completeProfile.languages || [],
+                certifications: completeProfile.certifications || [],
+                portfolio_links: completeProfile.portfolio_links || [],
+                location: `${completeProfile.profile.city || ''}, ${completeProfile.profile.state || ''}`.replace(/^,\s*|,\s*$/g, '') || '',
+                education: [],
+                experience: [],
+                skills: completeProfile.skills?.map(skill => skill.skill_name) || [],
+                languages: completeProfile.languages?.map(lang => lang.language_name) || [],
+                projects: [],
+                custom_answers: {},
+                socials: {},
+                settings: {
+                  nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
+                },
+                lastSyncedAt: new Date().toISOString()
+              } as UserProfile;
+              
+              setUserData(updatedData);
+              await chrome.storage.local.set({ userData: updatedData });
+              setLastSyncedAt(updatedData.lastSyncedAt);
+              
+              console.log('✅ Fallback data successfully cached');
+            }
+          } catch (fallbackError) {
+            console.error('❌ Fallback failed: Could not fetch data from Supabase:', fallbackError);
+            console.log('⚠️ Using existing cached data if available');
+          }
         }
       });
     };
@@ -658,6 +771,23 @@ const Popup: React.FC = () => {
 
         {activeTab === 'automation' ? (
           <>
+            <div style={{ 
+              fontSize: '12px', 
+              color: '#666', 
+              marginBottom: '10px',
+              textAlign: 'center',
+              background: 'rgba(45, 52, 54, 0.03)',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}>
+              <span>🔄</span>
+              <span>Last synced: {formatLastSynced(lastSyncedAt)}</span>
+            </div>
+            
             <Button 
               onClick={handleStartStop}
               isRunning={isRunning}

@@ -39,7 +39,6 @@ export interface EducationRecord {
   institution_logo_url?: string;
   degree_type?: string;
   major?: string;
-  minor?: string;
   gpa?: number;
   start_year?: number;
   end_year?: number;
@@ -301,6 +300,9 @@ export interface UserProfile {
   certifications?: Certification[];
   portfolio_links?: PortfolioLink[];
   job_preferences?: JobPreference;
+  
+  // Sync metadata
+  lastSyncedAt?: string;
 }
 
 export interface JobApplication {

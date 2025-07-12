@@ -45557,7 +45557,7 @@ exports["default"] = SignIn;
 
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.transformCompleteProfileToUserProfile = exports.getCompleteProfile = exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.ensureAuthenticated = exports.signOut = exports.signIn = exports.supabase = void 0;
+exports.saveDataVersions = exports.shouldRefreshData = exports.getDataVersions = exports.transformCompleteProfileToUserProfile = exports.getCompleteProfile = exports.getUserProfile = exports.initSupabaseClient = exports.refreshSession = exports.trackJobApplication = exports.getCurrentUser = exports.getSession = exports.ensureAuthenticated = exports.signOut = exports.signIn = exports.supabase = void 0;
 const supabase_js_1 = __webpack_require__(/*! @supabase/supabase-js */ "./node_modules/@supabase/supabase-js/dist/module/index.js");
 const supabaseUrl = 'https://tedelpcjgknjnlhezsdo.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlZGVscGNqZ2tuam5saGV6c2RvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA5MTU4ODUsImV4cCI6MjA1NjQ5MTg4NX0.TUfoy4jG2t9YzniUbd-GnHGHYW6k4NY4yeUiBzyCYqw';
@@ -46031,6 +46031,88 @@ const transformCompleteProfileToUserProfile = (completeProfile) => {
     };
 };
 exports.transformCompleteProfileToUserProfile = transformCompleteProfileToUserProfile;
+/**
+ * Get the latest updated_at timestamps for all autofill-related tables
+ * Used for version checking to determine if local cache is stale
+ */
+const getDataVersions = async () => {
+    try {
+        const user = await (0, exports.getCurrentUser)();
+        if (!user) {
+            console.log('❌ No user found, cannot get data versions');
+            return null;
+        }
+        // Get the most recent updated_at timestamp for each table
+        const { data, error } = await exports.supabase
+            .rpc('get_data_versions', { user_id: user.id });
+        if (error) {
+            console.error('❌ Error getting data versions:', error.message);
+            return null;
+        }
+        console.log('✅ Data versions retrieved:', data);
+        return data;
+    }
+    catch (error) {
+        console.error('❌ Exception getting data versions:', error);
+        return null;
+    }
+};
+exports.getDataVersions = getDataVersions;
+/**
+ * Check if local cache is stale by comparing timestamps
+ * Returns true if fresh data should be fetched from Supabase
+ */
+const shouldRefreshData = async () => {
+    try {
+        // Get remote versions
+        const remoteVersions = await (0, exports.getDataVersions)();
+        if (!remoteVersions) {
+            console.log('⚠️ Could not get remote versions, assuming refresh needed');
+            return true;
+        }
+        // Get cached versions from Chrome storage
+        const result = await chrome.storage.local.get(['dataVersions']);
+        const cachedVersions = result.dataVersions;
+        if (!cachedVersions) {
+            console.log('📝 No cached versions found, refresh needed');
+            return true;
+        }
+        // Compare each table's timestamp
+        const tables = ['profiles', 'education', 'work_experiences', 'profile_skills', 'profile_languages', 'portfolio_links'];
+        for (const table of tables) {
+            const remoteTime = remoteVersions[table];
+            const cachedTime = cachedVersions[table];
+            if (!cachedTime || !remoteTime) {
+                console.log(`📝 Missing timestamp for ${table}, refresh needed`);
+                return true;
+            }
+            if (new Date(remoteTime) > new Date(cachedTime)) {
+                console.log(`🔄 ${table} has newer data (remote: ${remoteTime}, cached: ${cachedTime}), refresh needed`);
+                return true;
+            }
+        }
+        console.log('✅ All data is up to date, no refresh needed');
+        return false;
+    }
+    catch (error) {
+        console.error('❌ Error checking data freshness:', error);
+        return true; // Default to refresh on error
+    }
+};
+exports.shouldRefreshData = shouldRefreshData;
+/**
+ * Save data versions to Chrome storage after successful data fetch
+ */
+const saveDataVersions = async (versions) => {
+    try {
+        await chrome.storage.local.set({ dataVersions: versions });
+        console.log('✅ Data versions saved to cache');
+    }
+    catch (error) {
+        console.error('❌ Error saving data versions:', error);
+    }
+};
+exports.saveDataVersions = saveDataVersions;
 
 
 /***/ }),
@@ -46509,6 +46591,25 @@ const Popup = () => {
     const [activeTab, setActiveTab] = (0, react_1.useState)('automation');
     const [userData, setUserData] = (0, react_1.useState)(defaultUserData);
     const [delay, setDelay] = (0, react_1.useState)(5);
+    const [lastSyncedAt, setLastSyncedAt] = (0, react_1.useState)(null);
+    // Helper function to format last synced time
+    const formatLastSynced = (timestamp) => {
+        if (!timestamp)
+            return 'Never';
+        const now = new Date();
+        const synced = new Date(timestamp);
+        const diffMs = now.getTime() - synced.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 1)
+            return 'Just now';
+        if (diffMins < 60)
+            return `${diffMins} min${diffMins === 1 ? '' : 's'} ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24)
+            return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+    };
     (0, react_1.useEffect)(() => {
         const initializeData = async () => {
             const authResult = await checkAuth();
@@ -46526,25 +46627,111 @@ const Popup = () => {
                         const savedDelay = Math.floor(result.userData.settings.nextJobDelay / 1000);
                         setDelay(savedDelay);
                     }
+                    // Set the last synced time from cached data
+                    if (result.userData.lastSyncedAt) {
+                        setLastSyncedAt(result.userData.lastSyncedAt);
+                    }
                 }
-                // Then fetch latest profile data from Supabase
+                // 🚀 DYNAMIC SYNC: Check if fresh data is needed
                 try {
-                    const completeProfile = await (0, supabase_1.getCompleteProfile)();
-                    if (completeProfile) {
-                        const transformedProfile = (0, supabase_1.transformCompleteProfileToUserProfile)(completeProfile);
-                        const updatedData = {
-                            ...transformedProfile,
-                            settings: {
-                                ...transformedProfile.settings,
-                                nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
+                    console.log('🔍 Checking if data refresh is needed...');
+                    const needsRefresh = await (0, supabase_1.shouldRefreshData)();
+                    if (needsRefresh) {
+                        console.log('🔄 Fresh data needed, fetching from Supabase...');
+                        console.log('📊 Sync reason: Remote data is newer than cached data');
+                        const completeProfile = await (0, supabase_1.getCompleteProfile)();
+                        if (completeProfile) {
+                            // Get the latest data versions for caching
+                            const dataVersions = await (0, supabase_1.getDataVersions)();
+                            // 🔍 CRITICAL FIX: Clear old cache before setting new data
+                            console.log('🔄 Clearing old userData cache...');
+                            await chrome.storage.local.remove("userData");
+                            // 🔍 CRITICAL FIX: Don't transform - use raw complete profile data
+                            const updatedData = {
+                                ...completeProfile.profile, // Use raw profile data
+                                // Keep the normalized arrays for autofill
+                                work_experiences: completeProfile.work_experiences || [],
+                                education_records: completeProfile.education || [], // Raw education data
+                                profile_skills: completeProfile.skills || [],
+                                profile_languages: completeProfile.languages || [],
+                                certifications: completeProfile.certifications || [],
+                                portfolio_links: completeProfile.portfolio_links || [],
+                                // Required UserProfile fields (keep legacy format for compatibility)
+                                location: `${completeProfile.profile.city || ''}, ${completeProfile.profile.state || ''}`.replace(/^,\s*|,\s*$/g, '') || '',
+                                education: [], // Legacy format (empty for now)
+                                experience: [], // Legacy format (empty for now)
+                                skills: completeProfile.skills?.map(skill => skill.skill_name) || [],
+                                languages: completeProfile.languages?.map(lang => lang.language_name) || [],
+                                projects: [],
+                                custom_answers: {},
+                                socials: {},
+                                // Settings
+                                settings: {
+                                    nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
+                                },
+                                // Add sync metadata
+                                lastSyncedAt: new Date().toISOString()
+                            };
+                            console.log('✅ Setting fresh userData with raw Supabase data');
+                            console.log('🔍 DEBUG - Fresh education data:', updatedData.education_records);
+                            setUserData(updatedData);
+                            await chrome.storage.local.set({ userData: updatedData });
+                            // Save the data versions for future comparison
+                            if (dataVersions) {
+                                await (0, supabase_1.saveDataVersions)(dataVersions);
                             }
-                        };
-                        setUserData(updatedData);
-                        await chrome.storage.local.set({ userData: updatedData });
+                            // Update sync status
+                            setLastSyncedAt(updatedData.lastSyncedAt);
+                            console.log('✅ Data successfully synced and cached');
+                        }
+                    }
+                    else {
+                        console.log('💾 Used cached data - all timestamps are current');
+                        console.log('📊 Sync reason: Local cache is up to date');
+                        // Use existing cached data - no API call needed
                     }
                 }
                 catch (error) {
-                    console.error('Error fetching profile data:', error);
+                    console.error('❌ Error during data sync:', error);
+                    console.log('🔄 Fallback: Attempting direct fetch from Supabase');
+                    // Fallback: try to get data anyway
+                    try {
+                        const completeProfile = await (0, supabase_1.getCompleteProfile)();
+                        if (completeProfile) {
+                            console.log('✅ Fallback successful: fetched data despite sync error');
+                            console.log('📊 Sync reason: Fallback after version check failure');
+                            // Use the same data setting logic as above (simplified)
+                            const updatedData = {
+                                ...completeProfile.profile,
+                                work_experiences: completeProfile.work_experiences || [],
+                                education_records: completeProfile.education || [],
+                                profile_skills: completeProfile.skills || [],
+                                profile_languages: completeProfile.languages || [],
+                                certifications: completeProfile.certifications || [],
+                                portfolio_links: completeProfile.portfolio_links || [],
+                                location: `${completeProfile.profile.city || ''}, ${completeProfile.profile.state || ''}`.replace(/^,\s*|,\s*$/g, '') || '',
+                                education: [],
+                                experience: [],
+                                skills: completeProfile.skills?.map(skill => skill.skill_name) || [],
+                                languages: completeProfile.languages?.map(lang => lang.language_name) || [],
+                                projects: [],
+                                custom_answers: {},
+                                socials: {},
+                                settings: {
+                                    nextJobDelay: result.userData?.settings?.nextJobDelay || 5000
+                                },
+                                lastSyncedAt: new Date().toISOString()
+                            };
+                            setUserData(updatedData);
+                            await chrome.storage.local.set({ userData: updatedData });
+                            setLastSyncedAt(updatedData.lastSyncedAt);
+                            console.log('✅ Fallback data successfully cached');
+                        }
+                    }
+                    catch (fallbackError) {
+                        console.error('❌ Fallback failed: Could not fetch data from Supabase:', fallbackError);
+                        console.log('⚠️ Using existing cached data if available');
+                    }
                 }
             });
         };
@@ -46657,6 +46844,23 @@ const Popup = () => {
                 react_1.default.createElement(Tab, { active: activeTab === 'profile', onClick: () => setActiveTab('profile') }, "Profile"),
                 react_1.default.createElement(Tab, { active: activeTab === 'settings', onClick: () => setActiveTab('settings') }, "Settings")),
             activeTab === 'automation' ? (react_1.default.createElement(react_1.default.Fragment, null,
+                react_1.default.createElement("div", { style: {
+                        fontSize: '12px',
+                        color: '#666',
+                        marginBottom: '10px',
+                        textAlign: 'center',
+                        background: 'rgba(45, 52, 54, 0.03)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                    } },
+                    react_1.default.createElement("span", null, "\uD83D\uDD04"),
+                    react_1.default.createElement("span", null,
+                        "Last synced: ",
+                        formatLastSynced(lastSyncedAt))),
                 react_1.default.createElement(Button, { onClick: handleStartStop, isRunning: isRunning }, isRunning ? 'Stop Automation' : 'Start Automation'),
                 react_1.default.createElement(Button, { onClick: () => {
                         console.log("🔵 Autofill button clicked");

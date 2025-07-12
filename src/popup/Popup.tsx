@@ -274,6 +274,116 @@ const HelpText = styled.small`
   }
 `;
 
+const ContinuousToggleContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: rgba(45, 52, 54, 0.03);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(45, 52, 54, 0.08);
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(45, 52, 54, 0.05);
+    border-color: rgba(45, 52, 54, 0.12);
+  }
+`;
+
+const ContinuousToggleLabel = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const ContinuousToggleTitle = styled.span`
+  font-weight: 600;
+  color: #2D3436;
+  font-size: 14px;
+`;
+
+const ContinuousToggleDescription = styled.span`
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+`;
+
+const ToggleSwitch = styled.label`
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  cursor: pointer;
+`;
+
+const ToggleSlider = styled.span<{ checked: boolean }>`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: ${props => props.checked ? '#2D3436' : '#cbd5e1'};
+  border-radius: 24px;
+  transition: all 0.3s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  &:before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: ${props => props.checked ? '27px' : '3px'};
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+`;
+
+const ToggleInput = styled.input`
+  opacity: 0;
+  width: 0;
+  height: 0;
+`;
+
+const ProgressIndicator = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+`;
+
+const ProgressSpinner = styled.div`
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
+const StopButton = styled(Button)`
+  background: #e74c3c;
+  
+  &:hover {
+    background: #c0392b;
+  }
+`;
+
 const ProfileContent = styled.div`
   max-height: 500px;
   overflow-y: auto;
@@ -465,6 +575,15 @@ const Popup: React.FC = () => {
   const [delay, setDelay] = useState(5);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   
+  // Continuous autofill state
+  const [isContinuousMode, setIsContinuousMode] = useState(false);
+  const [isContinuousRunning, setIsContinuousRunning] = useState(false);
+  const [continuousProgress, setContinuousProgress] = useState<{
+    currentStep: number;
+    totalSteps: number;
+    stepName: string;
+  } | null>(null);
+  
   // Helper function to format last synced time
   const formatLastSynced = (timestamp: string | null) => {
     if (!timestamp) return 'Never';
@@ -492,7 +611,7 @@ const Popup: React.FC = () => {
       checkAutomationState();
 
       // Get saved user data from storage first
-      chrome.storage.local.get(['userData'], async (result) => {
+      chrome.storage.local.get(['userData', 'isContinuousMode', 'isContinuousRunning', 'continuousProgress'], async (result) => {
         if (result.userData) {
           setUserData(result.userData);
           // Set the delay from saved settings
@@ -504,6 +623,17 @@ const Popup: React.FC = () => {
           if (result.userData.lastSyncedAt) {
             setLastSyncedAt(result.userData.lastSyncedAt);
           }
+        }
+        
+        // Load continuous mode preferences
+        if (result.isContinuousMode !== undefined) {
+          setIsContinuousMode(result.isContinuousMode);
+        }
+        if (result.isContinuousRunning !== undefined) {
+          setIsContinuousRunning(result.isContinuousRunning);
+        }
+        if (result.continuousProgress !== undefined) {
+          setContinuousProgress(result.continuousProgress);
         }
         
         // 🚀 DYNAMIC SYNC: Check if fresh data is needed
@@ -628,6 +758,12 @@ const Popup: React.FC = () => {
       if (changes.isAutomationRunning) {
         setIsRunning(changes.isAutomationRunning.newValue);
       }
+      if (changes.isContinuousRunning) {
+        setIsContinuousRunning(changes.isContinuousRunning.newValue);
+      }
+      if (changes.continuousProgress) {
+        setContinuousProgress(changes.continuousProgress.newValue);
+      }
     };
 
     chrome.storage.onChanged.addListener(handleStorageChange);
@@ -732,6 +868,53 @@ const Popup: React.FC = () => {
     await chrome.storage.local.set({ userData: updatedData });
   };
 
+  const handleContinuousToggle = (enabled: boolean) => {
+    setIsContinuousMode(enabled);
+    // Save the preference
+    chrome.storage.local.set({ isContinuousMode: enabled });
+  };
+
+  const handleContinuousStart = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        console.log("🚀 Starting continuous autofill mode");
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            type: "START_CONTINUOUS_AUTOFILL",
+            data: userData
+          },
+          (response) => {
+            console.log("🚀 Continuous autofill response:", response);
+            if (chrome.runtime.lastError) {
+              console.error("🚀 Chrome runtime error:", chrome.runtime.lastError);
+            }
+          }
+        );
+      }
+    });
+  };
+
+  const handleContinuousStop = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        console.log("🛑 Stopping continuous autofill mode");
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            type: "STOP_CONTINUOUS_AUTOFILL"
+          },
+          (response) => {
+            console.log("🛑 Stop continuous autofill response:", response);
+            if (chrome.runtime.lastError) {
+              console.error("🛑 Chrome runtime error:", chrome.runtime.lastError);
+            }
+          }
+        );
+      }
+    });
+  };
+
   if (!isAuthenticated) {
     return (
       <Container>
@@ -788,6 +971,34 @@ const Popup: React.FC = () => {
               <span>Last synced: {formatLastSynced(lastSyncedAt)}</span>
             </div>
             
+            {/* Continuous Autofill Toggle */}
+            <ContinuousToggleContainer>
+              <ContinuousToggleLabel>
+                <ContinuousToggleTitle>Continuous Autofill</ContinuousToggleTitle>
+                <ContinuousToggleDescription>
+                  Auto-fill all steps until submission
+                </ContinuousToggleDescription>
+              </ContinuousToggleLabel>
+              <ToggleSwitch>
+                <ToggleInput 
+                  type="checkbox" 
+                  checked={isContinuousMode}
+                  onChange={(e) => handleContinuousToggle(e.target.checked)}
+                />
+                <ToggleSlider checked={isContinuousMode} />
+              </ToggleSwitch>
+            </ContinuousToggleContainer>
+
+            {/* Progress Indicator (only show when continuous mode is running) */}
+            {isContinuousRunning && continuousProgress && (
+              <ProgressIndicator>
+                <ProgressSpinner />
+                <span>
+                  Step {continuousProgress.currentStep}/{continuousProgress.totalSteps}: {continuousProgress.stepName}
+                </span>
+              </ProgressIndicator>
+            )}
+            
             <Button 
               onClick={handleStartStop}
               isRunning={isRunning}
@@ -795,44 +1006,57 @@ const Popup: React.FC = () => {
               {isRunning ? 'Stop Automation' : 'Start Automation'}
             </Button>
             
-            <Button 
-              onClick={() => {
-                console.log("🔵 Autofill button clicked");
-                console.log("🔵 User data:", userData);
-                console.log("🔵 User data details:", {
-                  full_name: userData.full_name,
-                  email: userData.email,
-                  phone: userData.phone,
-                  location: userData.location,
-                  hasWorkExperience: userData.experience?.length > 0,
-                  hasEducation: userData.education?.length > 0,
-                  hasSkills: userData.skills?.length > 0
-                });
-                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                  console.log("🔵 Current tab:", tabs[0]);
-                  if (tabs[0]?.id) {
-                    console.log("🔵 Sending autofill message to tab:", tabs[0].id);
-                    chrome.tabs.sendMessage(
-                      tabs[0].id, 
-                      {
-                        type: "AUTOFILL_CURRENT_PAGE",
-                        data: userData
-                      },
-                      (response) => {
-                        console.log("🔵 Autofill response:", response);
-                        if (chrome.runtime.lastError) {
-                          console.error("🔵 Chrome runtime error:", chrome.runtime.lastError);
+            {/* Conditional rendering based on continuous mode */}
+            {isContinuousMode ? (
+              isContinuousRunning ? (
+                <StopButton onClick={handleContinuousStop}>
+                  Stop Continuous Autofill
+                </StopButton>
+              ) : (
+                <Button onClick={handleContinuousStart}>
+                  Start Continuous Autofill
+                </Button>
+              )
+            ) : (
+              <Button 
+                onClick={() => {
+                  console.log("🔵 Autofill button clicked");
+                  console.log("🔵 User data:", userData);
+                  console.log("🔵 User data details:", {
+                    full_name: userData.full_name,
+                    email: userData.email,
+                    phone: userData.phone,
+                    location: userData.location,
+                    hasWorkExperience: userData.experience?.length > 0,
+                    hasEducation: userData.education?.length > 0,
+                    hasSkills: userData.skills?.length > 0
+                  });
+                  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                    console.log("🔵 Current tab:", tabs[0]);
+                    if (tabs[0]?.id) {
+                      console.log("🔵 Sending autofill message to tab:", tabs[0].id);
+                      chrome.tabs.sendMessage(
+                        tabs[0].id, 
+                        {
+                          type: "AUTOFILL_CURRENT_PAGE",
+                          data: userData
+                        },
+                        (response) => {
+                          console.log("🔵 Autofill response:", response);
+                          if (chrome.runtime.lastError) {
+                            console.error("🔵 Chrome runtime error:", chrome.runtime.lastError);
+                          }
                         }
-                      }
-                    );
-                  } else {
-                    console.error("🔵 No active tab found");
-                  }
-                });
-              }}
-            >
-              Autofill This Page
-            </Button>
+                      );
+                    } else {
+                      console.error("🔵 No active tab found");
+                    }
+                  });
+                }}
+              >
+                Autofill This Page
+              </Button>
+            )}
           </>
         ) : activeTab === 'profile' ? (
           <ProfileTab profile={userData} />

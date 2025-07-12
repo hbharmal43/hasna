@@ -46418,6 +46418,106 @@ const HelpText = styled_1.default.small `
     background: rgba(45, 52, 54, 0.05);
   }
 `;
+const ContinuousToggleContainer = styled_1.default.div `
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: rgba(45, 52, 54, 0.03);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(45, 52, 54, 0.08);
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(45, 52, 54, 0.05);
+    border-color: rgba(45, 52, 54, 0.12);
+  }
+`;
+const ContinuousToggleLabel = styled_1.default.div `
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+const ContinuousToggleTitle = styled_1.default.span `
+  font-weight: 600;
+  color: #2D3436;
+  font-size: 14px;
+`;
+const ContinuousToggleDescription = styled_1.default.span `
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+`;
+const ToggleSwitch = styled_1.default.label `
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  cursor: pointer;
+`;
+const ToggleSlider = styled_1.default.span `
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: ${props => props.checked ? '#2D3436' : '#cbd5e1'};
+  border-radius: 24px;
+  transition: all 0.3s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  &:before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: ${props => props.checked ? '27px' : '3px'};
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+`;
+const ToggleInput = styled_1.default.input `
+  opacity: 0;
+  width: 0;
+  height: 0;
+`;
+const ProgressIndicator = styled_1.default.div `
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+`;
+const ProgressSpinner = styled_1.default.div `
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+const StopButton = (0, styled_1.default)(Button) `
+  background: #e74c3c;
+  
+  &:hover {
+    background: #c0392b;
+  }
+`;
 const ProfileContent = styled_1.default.div `
   max-height: 500px;
   overflow-y: auto;
@@ -46592,6 +46692,10 @@ const Popup = () => {
     const [userData, setUserData] = (0, react_1.useState)(defaultUserData);
     const [delay, setDelay] = (0, react_1.useState)(5);
     const [lastSyncedAt, setLastSyncedAt] = (0, react_1.useState)(null);
+    // Continuous autofill state
+    const [isContinuousMode, setIsContinuousMode] = (0, react_1.useState)(false);
+    const [isContinuousRunning, setIsContinuousRunning] = (0, react_1.useState)(false);
+    const [continuousProgress, setContinuousProgress] = (0, react_1.useState)(null);
     // Helper function to format last synced time
     const formatLastSynced = (timestamp) => {
         if (!timestamp)
@@ -46619,7 +46723,7 @@ const Popup = () => {
             // Check automation state when popup opens
             checkAutomationState();
             // Get saved user data from storage first
-            chrome.storage.local.get(['userData'], async (result) => {
+            chrome.storage.local.get(['userData', 'isContinuousMode', 'isContinuousRunning', 'continuousProgress'], async (result) => {
                 if (result.userData) {
                     setUserData(result.userData);
                     // Set the delay from saved settings
@@ -46631,6 +46735,16 @@ const Popup = () => {
                     if (result.userData.lastSyncedAt) {
                         setLastSyncedAt(result.userData.lastSyncedAt);
                     }
+                }
+                // Load continuous mode preferences
+                if (result.isContinuousMode !== undefined) {
+                    setIsContinuousMode(result.isContinuousMode);
+                }
+                if (result.isContinuousRunning !== undefined) {
+                    setIsContinuousRunning(result.isContinuousRunning);
+                }
+                if (result.continuousProgress !== undefined) {
+                    setContinuousProgress(result.continuousProgress);
                 }
                 // 🚀 DYNAMIC SYNC: Check if fresh data is needed
                 try {
@@ -46741,6 +46855,12 @@ const Popup = () => {
             if (changes.isAutomationRunning) {
                 setIsRunning(changes.isAutomationRunning.newValue);
             }
+            if (changes.isContinuousRunning) {
+                setIsContinuousRunning(changes.isContinuousRunning.newValue);
+            }
+            if (changes.continuousProgress) {
+                setContinuousProgress(changes.continuousProgress.newValue);
+            }
         };
         chrome.storage.onChanged.addListener(handleStorageChange);
         return () => {
@@ -46830,6 +46950,42 @@ const Popup = () => {
         setUserData(updatedData);
         await chrome.storage.local.set({ userData: updatedData });
     };
+    const handleContinuousToggle = (enabled) => {
+        setIsContinuousMode(enabled);
+        // Save the preference
+        chrome.storage.local.set({ isContinuousMode: enabled });
+    };
+    const handleContinuousStart = () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                console.log("🚀 Starting continuous autofill mode");
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: "START_CONTINUOUS_AUTOFILL",
+                    data: userData
+                }, (response) => {
+                    console.log("🚀 Continuous autofill response:", response);
+                    if (chrome.runtime.lastError) {
+                        console.error("🚀 Chrome runtime error:", chrome.runtime.lastError);
+                    }
+                });
+            }
+        });
+    };
+    const handleContinuousStop = () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                console.log("🛑 Stopping continuous autofill mode");
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: "STOP_CONTINUOUS_AUTOFILL"
+                }, (response) => {
+                    console.log("🛑 Stop continuous autofill response:", response);
+                    if (chrome.runtime.lastError) {
+                        console.error("🛑 Chrome runtime error:", chrome.runtime.lastError);
+                    }
+                });
+            }
+        });
+    };
     if (!isAuthenticated) {
         return (react_1.default.createElement(Container, null,
             react_1.default.createElement(SignIn_1.default, { onSignIn: () => setIsAuthenticated(true) })));
@@ -46861,8 +47017,24 @@ const Popup = () => {
                     react_1.default.createElement("span", null,
                         "Last synced: ",
                         formatLastSynced(lastSyncedAt))),
+                react_1.default.createElement(ContinuousToggleContainer, null,
+                    react_1.default.createElement(ContinuousToggleLabel, null,
+                        react_1.default.createElement(ContinuousToggleTitle, null, "Continuous Autofill"),
+                        react_1.default.createElement(ContinuousToggleDescription, null, "Auto-fill all steps until submission")),
+                    react_1.default.createElement(ToggleSwitch, null,
+                        react_1.default.createElement(ToggleInput, { type: "checkbox", checked: isContinuousMode, onChange: (e) => handleContinuousToggle(e.target.checked) }),
+                        react_1.default.createElement(ToggleSlider, { checked: isContinuousMode }))),
+                isContinuousRunning && continuousProgress && (react_1.default.createElement(ProgressIndicator, null,
+                    react_1.default.createElement(ProgressSpinner, null),
+                    react_1.default.createElement("span", null,
+                        "Step ",
+                        continuousProgress.currentStep,
+                        "/",
+                        continuousProgress.totalSteps,
+                        ": ",
+                        continuousProgress.stepName))),
                 react_1.default.createElement(Button, { onClick: handleStartStop, isRunning: isRunning }, isRunning ? 'Stop Automation' : 'Start Automation'),
-                react_1.default.createElement(Button, { onClick: () => {
+                isContinuousMode ? (isContinuousRunning ? (react_1.default.createElement(StopButton, { onClick: handleContinuousStop }, "Stop Continuous Autofill")) : (react_1.default.createElement(Button, { onClick: handleContinuousStart }, "Start Continuous Autofill"))) : (react_1.default.createElement(Button, { onClick: () => {
                         console.log("🔵 Autofill button clicked");
                         console.log("🔵 User data:", userData);
                         console.log("🔵 User data details:", {
@@ -46892,7 +47064,7 @@ const Popup = () => {
                                 console.error("🔵 No active tab found");
                             }
                         });
-                    } }, "Autofill This Page"))) : activeTab === 'profile' ? (react_1.default.createElement(ProfileTab_1.default, { profile: userData })) : (react_1.default.createElement(Form, null,
+                    } }, "Autofill This Page")))) : activeTab === 'profile' ? (react_1.default.createElement(ProfileTab_1.default, { profile: userData })) : (react_1.default.createElement(Form, null,
                 react_1.default.createElement(FormGroup, null,
                     react_1.default.createElement(Label, null, "Delay between jobs (seconds)"),
                     react_1.default.createElement(Input, { type: "number", min: "1", max: "30", value: delay, onChange: (e) => {
